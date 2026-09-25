@@ -288,5 +288,6 @@ def study(sym):
         print(f"     {lab}: n={len(idx)} corr {np.corrcoef(f60, rest)[0,1]:+.3f} | fade30 {f30.mean():+.1f} pts (t={tstat(f30):+.2f}, hit {100*(f30>0).mean():.0f}%)")
     return out
 
-res = {s: study(s) for s in ("nifty", "sensex")}
-json.dump(res, open(str(__import__("pathlib").Path(__file__).resolve().parent / "pa_study.json"), "w"), indent=1, default=str)
+if __name__ == "__main__":
+    res = {s: study(s) for s in ("nifty", "sensex")}
+    json.dump(res, open(str(__import__("pathlib").Path(__file__).resolve().parent / "pa_study.json"), "w"), indent=1, default=str)

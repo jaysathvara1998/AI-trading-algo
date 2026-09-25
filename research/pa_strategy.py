@@ -135,15 +135,16 @@ STRATS = {
     "trendday 11:00 -> close": make_trendday(105),
 }
 
-res = {}
-for sym in ("nifty", "sensex"):
-    df = load(sym); days = [g.reset_index(drop=True) for _, g in df.groupby("date", sort=True)]; dates = [g.date.iloc[0] for g in days]
-    print(f"\n===== {sym.upper()} ({len(days)} sessions; costs+theta+slippage, delta {DELTA}) =====")
-    res[sym] = {}
-    for name, fn in STRATS.items():
-        t = simulate(days, dates, fn, sym)
-        res[sym][name] = report(name, t, len(days))
-    print("  -- same, but WITHOUT theta (i.e. as if traded via futures/deep ITM):")
-    for name in ("fade30 >=0.3%, exit 15:15", "gapfade >=0.5%", "trendday 10:30 -> close"):
-        t = simulate(days, dates, STRATS[name], sym, use_theta=False); report(name + " [no theta]", t, len(days))
-json.dump(res, open(str(__import__("pathlib").Path(__file__).resolve().parent / "pa_strategy.json"), "w"), indent=1, default=str)
+if __name__ == "__main__":
+    res = {}
+    for sym in ("nifty", "sensex"):
+        df = load(sym); days = [g.reset_index(drop=True) for _, g in df.groupby("date", sort=True)]; dates = [g.date.iloc[0] for g in days]
+        print(f"\n===== {sym.upper()} ({len(days)} sessions; costs+theta+slippage, delta {DELTA}) =====")
+        res[sym] = {}
+        for name, fn in STRATS.items():
+            t = simulate(days, dates, fn, sym)
+            res[sym][name] = report(name, t, len(days))
+        print("  -- same, but WITHOUT theta (i.e. as if traded via futures/deep ITM):")
+        for name in ("fade30 >=0.3%, exit 15:15", "gapfade >=0.5%", "trendday 10:30 -> close"):
+            t = simulate(days, dates, STRATS[name], sym, use_theta=False); report(name + " [no theta]", t, len(days))
+    json.dump(res, open(str(__import__("pathlib").Path(__file__).resolve().parent / "pa_strategy.json"), "w"), indent=1, default=str)
