@@ -153,3 +153,35 @@ Trading Price Action (glossary and course notes); Raschke and Connors, Street Sm
 Wyckoff Analytics; LuxAlgo trendline and liquidity-sweep definitions; Intraday Lab NIFTY ORB backtest
 (2017 to 2026, PF 1.23 before costs); MarketNetra session-timing guide. Full URLs in the research agent
 brief archived with this note.
+
+## 7. Backtest result (implemented as specified, 3-year data, 25 Sep 2026)
+
+Implementation: `pa_setup_backtest.py`. Costs as in section 5 (STT 0.15%, spread allowance 0.2 to 0.3% per side,
+futures STT 0.02% of notional). Instruments as specified: A and C on the 0.85-delta option, B on the 0.72-delta weekly.
+
+| | NIFTY | SENSEX |
+|---|---|---|
+| Sessions after skips (expiry, gap, narrow OR) | 534 | 530 |
+| Day types trend / range / undefined | 51 / 180 / 303 | 54 / 160 / 316 |
+| Setup A trades, net | 1, +284 | 1, +2,648 |
+| Setup B trades, net (win %, PF, t) | 11, −1,154 (36%, 0.81, −0.3) | 16, +14,888 (69%, 4.39, +2.5) |
+| Setup C trades, net (win %, PF, t) | 70, −34,975 (19%, 0.52, −2.1) | 73, −19,112 (32%, 0.72, −1.1) |
+| All, net | 82, −35,846 | 90, −1,577 |
+| All on the 0.72-delta option instead | −18,033 | +13,543 (t 0.8) |
+| All on futures instead | −46,555 | −3,441 |
+
+Verdict against the section 5 pass criteria: FAIL on every count. No index reaches 100 trades; no setup has
+t >= 2 on both indices; C is negative in most years on both.
+
+Why each leg failed:
+- **A** almost never occurs. Funnel on NIFTY: 51 trend days, 44 with a validated line, 37 breaks, 19 retests,
+  13 strong trigger bars, 6 inside the windows, 1 meeting 2R. The with-trend retest that practitioners describe
+  is a rare event once every condition is required at once.
+- **B** is rare (11 and 16 trades) and its SENSEX profit is one year (2024: +11,749 of +14,888). It is the only
+  leg with any sign of life and would need several more years of data to judge.
+- **C** stops out 94% and 88% of the time. Diagnostic (a new hypothesis, not the spec): widening the stop to 0.5 or
+  1.0 ATR still loses on both indices (NIFTY −27,367 and −20,107; SENSEX −29,883 and −12,809). The mid-session
+  level-hold effect measured in pa_mechanics.py does not survive being turned into an entry with a stop.
+
+Conclusion: the specification does not work. Deep-trap reversals (B) remain the one hypothesis worth carrying
+forward, and only with more history; the rest of the price-action corpus tested here should be retired.
