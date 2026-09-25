@@ -1,0 +1,313 @@
+<title>Price Action on NIFTY and SENSEX</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=Source+Sans+3:wght@400;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  color-scheme:light;
+  --ground:#f7f7f4; --surface:#ffffff; --ink:#14213d; --ink-2:#4f5b66; --ink-3:#7d8791;
+  --rule:#d9dcd4; --rule-2:#eceee8; --accent:#0b5d5a; --accent-soft:#e3efee;
+  --good:#1f7a4d; --good-soft:#e2f1e8; --warn:#a86a12; --warn-soft:#f6ecd9; --bad:#b23a30; --bad-soft:#f5e3e0;
+  --s1:#2a78d6; --s2:#eb6834; --grid:#e3e5de;
+  --serif:"Newsreader",Georgia,"Times New Roman",serif; --sans:"Source Sans 3","Helvetica Neue",Arial,sans-serif; --mono:"IBM Plex Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --ground:#15181c; --surface:#1c2025; --ink:#e8e9e3; --ink-2:#a7adb5; --ink-3:#7f868e;
+    --rule:#2f353c; --rule-2:#252a30; --accent:#5fc7c1; --accent-soft:#1d3331;
+    --good:#5fc48f; --good-soft:#1d3327; --warn:#e0a54a; --warn-soft:#3a2d16; --bad:#ef7f74; --bad-soft:#3d2320;
+    --s1:#3987e5; --s2:#d95926; --grid:#2a2f36;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --ground:#15181c; --surface:#1c2025; --ink:#e8e9e3; --ink-2:#a7adb5; --ink-3:#7f868e;
+  --rule:#2f353c; --rule-2:#252a30; --accent:#5fc7c1; --accent-soft:#1d3331;
+  --good:#5fc48f; --good-soft:#1d3327; --warn:#e0a54a; --warn-soft:#3a2d16; --bad:#ef7f74; --bad-soft:#3d2320;
+  --s1:#3987e5; --s2:#d95926; --grid:#2a2f36;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--sans);font-size:17px;line-height:1.55;padding-inline:20px;padding-block:0 96px}
+.wrap{max-width:880px;margin:0 auto}
+a{color:var(--accent)}
+h1,h2,h3{font-family:var(--serif);font-weight:500;line-height:1.15;text-wrap:balance;margin:0}
+h1{font-size:clamp(34px,5.2vw,50px);letter-spacing:-.01em}
+h2{font-size:29px;margin-top:64px;padding-top:22px;border-top:1px solid var(--rule)}
+h3{font-size:21px;margin-top:30px}
+p{max-width:68ch;margin:14px 0}
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin:0 0 6px}
+.sec-no{font-family:var(--mono);font-size:13px;color:var(--ink-3);letter-spacing:.08em;display:block;margin-bottom:6px}
+header{padding-block:56px 8px;border-bottom:1px solid var(--rule)}
+.byline{display:flex;flex-wrap:wrap;gap:8px 28px;margin-top:22px;font-family:var(--mono);font-size:13px;color:var(--ink-2)}
+.byline b{color:var(--ink);font-weight:500}
+.disclaimer{margin-top:26px;padding:14px 18px;border-left:3px solid var(--warn);background:var(--warn-soft);border-radius:0 6px 6px 0;font-size:15px;max-width:none}
+.verdict{margin-top:36px;padding:26px 28px;background:var(--surface);border:1px solid var(--rule);border-radius:8px}
+.verdict h2{border:0;margin:0 0 10px;padding:0;font-size:25px}
+.verdict p{max-width:72ch;font-size:18px}
+.verdict p:last-child{margin-bottom:0}
+table{border-collapse:collapse;width:100%;font-size:15px;margin:18px 0}
+.tbl{overflow-x:auto}
+th{font-family:var(--mono);font-size:12px;letter-spacing:.08em;text-transform:uppercase;font-weight:500;color:var(--ink-2);text-align:left;padding:10px 12px 8px;border-bottom:1px solid var(--rule)}
+td{padding:10px 12px;border-bottom:1px solid var(--rule-2);vertical-align:top}
+td.num,th.num{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:14px;white-space:nowrap}
+td.lab{font-weight:600}
+tr.ctrl td{color:var(--ink-2)}
+.chip{display:inline-block;font-family:var(--mono);font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.chip.good{background:var(--good-soft);color:var(--good)} .chip.warn{background:var(--warn-soft);color:var(--warn)} .chip.bad{background:var(--bad-soft);color:var(--bad)} .chip.na{background:var(--rule-2);color:var(--ink-2)}
+.neg{color:var(--bad)} .pos{color:var(--good)}
+.callout{margin:22px 0;padding:18px 22px;background:var(--accent-soft);border-radius:8px;max-width:none}
+.callout p{max-width:72ch;margin:8px 0}
+.callout p:first-child{margin-top:0}.callout p:last-child{margin-bottom:0}
+figure{margin:26px 0;padding:18px 18px 12px;background:var(--surface);border:1px solid var(--rule);border-radius:8px}
+figcaption{font-size:14px;color:var(--ink-2);margin-top:10px;max-width:none}
+figcaption b{color:var(--ink);font-weight:600}
+svg{width:100%;height:auto;display:block}
+.svg-text{font-family:var(--mono);font-size:11px;fill:var(--ink-2)}
+.svg-lab{font-family:var(--sans);font-size:12.5px;fill:var(--ink)}
+.legend{display:flex;gap:18px;font-size:13px;color:var(--ink-2);margin:4px 0 8px;font-family:var(--mono)}
+.legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.legend .n::before{background:var(--s1)} .legend .s::before{background:var(--s2)}
+ol.rules{padding-left:22px;max-width:72ch}
+ol.rules li{margin:10px 0}
+ul.tight{max-width:72ch;padding-left:20px} ul.tight li{margin:8px 0}
+code{font-family:var(--mono);font-size:.9em;background:var(--rule-2);padding:1px 5px;border-radius:3px}
+.src{font-size:14.5px;color:var(--ink-2);max-width:none}
+.src li{margin:6px 0}
+.small{font-size:14px;color:var(--ink-2)}
+@media (max-width:520px){body{font-size:16px} h2{font-size:25px} .verdict{padding:20px 18px} figure{padding:12px 10px 8px}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+
+<div class="wrap">
+<header>
+  <p class="eyebrow">Research note · Intraday index options</p>
+  <h1>Price Action on NIFTY and SENSEX</h1>
+  <p style="font-size:20px;color:var(--ink-2);max-width:66ch;margin-top:14px">What the evidence says about trading 1- to 15-minute price action on Indian index options, tested on your own 6.5 months of 1-minute data.</p>
+  <div class="byline">
+    <span>Prepared <b>25 September 2026</b></span>
+    <span>Data <b>NIFTY 137 · SENSEX 139 sessions</b>, Nov 2025 to Sep 2026</span>
+    <span>Instrument <b>weekly options, 1 lot, buy-only</b></span>
+  </div>
+  <p class="disclaimer"><b>Not investment advice.</b> This note is written to the standard of a research analyst but its author is not registered with SEBI. Every figure below is reproducible from the scripts in the repository, and every external claim carries its source. Past patterns in 137 sessions are not a forecast.</p>
+</header>
+
+<section class="verdict">
+  <h2>Verdict</h2>
+  <p>At the 1- to 15-minute scale, NIFTY and SENSEX behave close to a fair coin. No candle pattern, opening-range breakout, structure rule or short-horizon momentum or reversal rule produced an edge that survives costs on both indices in this sample, and the peer-reviewed literature does not supply one either. The current algorithm's trigger, 15-minute momentum, loses money on its own before any of the AI layers are added.</p>
+  <p>The only effects with statistical support are structural, not directional: volatility is roughly three times higher in the first 15 minutes than at midday, large opening gaps mostly do not fill, and a single round trip costs about ₹70 to ₹90 before spread, which is more than the size of most documented intraday effects. A price-action approach can still be built, but it has to trade session-level structure, once or twice a day, with stops scaled to the hour, and it needs at least two years of data before it is trusted with money.</p>
+</section>
+
+<h2><span class="sec-no">01</span>What would count as evidence</h2>
+<p>A rule earns a place in a live system only if it clears four bars at once. These are the bars used throughout this note.</p>
+<ol class="rules">
+  <li><b>Statistical.</b> The mean profit per trade, after costs, must be at least two standard errors above zero (t ≥ 2). With fewer than 30 trades no rule can pass, whatever its win rate.</li>
+  <li><b>Cross-sectional.</b> NIFTY and SENSEX move together with a correlation above 0.9. A genuine effect must show the same sign on both. A rule that works on one and fails on the other is describing a few days, not the market.</li>
+  <li><b>Temporal.</b> The sign must hold in both sub-periods available here, November 2025 and April to September 2026.</li>
+  <li><b>Parametric.</b> Shifting a threshold or an entry time by a small amount must not flip the sign. An edge that lives at one exact setting is a coincidence that was searched for.</li>
+</ol>
+
+<h2><span class="sec-no">02</span>Data and the cost model</h2>
+<p>The data is the 1-minute index history bundled with the project: 137 NIFTY sessions and 139 SENSEX sessions between 3 November 2025 and 17 September 2026, with a gap from December to March. Each session has all 375 bars and real open, high, low and close. Volume is present on most bars but is index volume, which carries little information.</p>
+<p>There are no option-price bars, so option P&amp;L is modelled: a 0.72-delta in-the-money weekly at 0.7% of spot (about ₹165 on NIFTY, ₹520 on SENSEX), premium moving linearly with spot, time decay of about 9% of premium per session, and 0.1% slippage each way. Costs use Dhan's schedule: ₹20 per order, STT on the sell premium, exchange charges, stamp duty and GST. Two things make this model generous to the strategies rather than harsh.</p>
+<ul class="tight">
+  <li>STT on options rose from 0.10% to 0.15% of sell premium on 1 April 2026. The model still uses 0.10%, so real costs are about ₹5 per trade higher.</li>
+  <li>The model has no bid-ask spread. Practitioner measurements put an all-in NIFTY round trip at ₹120 to ₹210 per lot once two spread crossings are included, against the ₹70 to ₹90 used here.</li>
+</ul>
+<div class="tbl"><table>
+  <tr><th>Round trip, 1 lot</th><th class="num">NIFTY 65 × ₹150</th><th class="num">NIFTY 65 × ₹250</th><th class="num">SENSEX 20 × ₹400</th><th class="num">SENSEX 20 × ₹600</th></tr>
+  <tr><td>Brokerage + GST</td><td class="num">47</td><td class="num">47</td><td class="num">47</td><td class="num">47</td></tr>
+  <tr><td>STT at 0.15% (sell)</td><td class="num">15</td><td class="num">24</td><td class="num">12</td><td class="num">18</td></tr>
+  <tr><td>Exchange, SEBI, stamp, GST</td><td class="num">8</td><td class="num">14</td><td class="num">6</td><td class="num">10</td></tr>
+  <tr><td class="lab">Statutory total</td><td class="num"><b>≈70</b></td><td class="num"><b>≈86</b></td><td class="num"><b>≈66</b></td><td class="num"><b>≈75</b></td></tr>
+  <tr><td>In spot points at 0.72 delta</td><td class="num">1.5</td><td class="num">1.8</td><td class="num">4.6</td><td class="num">5.2</td></tr>
+</table></div>
+<p class="small">The last row is the spot move each trade must capture just to pay statutory costs. NIFTY's median one-minute move is 3.3 points, so a scalp that lasts a few minutes is betting on noise to clear its own fees.</p>
+
+<h2><span class="sec-no">03</span>What the literature says</h2>
+<p>Almost nothing peer-reviewed tests minute-scale price action on Indian index options. What exists is work on intraday return dynamics in US and global index products, one NIFTY futures volatility study, unaudited practitioner backtests, and SEBI's population data on retail outcomes. The table grades each effect on the strength of the evidence, not on how often it is repeated in trading content.</p>
+<div class="tbl"><table>
+  <tr><th>Effect</th><th>Evidence</th><th>What it says</th><th>Survives option costs?</th></tr>
+  <tr><td class="lab">Intraday volatility U-shape</td><td><span class="chip good">Strong</span></td><td>NIFTY futures 2011 to 2018: first-hour volatility 0.35% per hour versus 0.23% at 11:00 to 12:00, rising again after 14:00 (Singh &amp; Gangwar 2018). Confirmed here.</td><td>Structural. Tells you how to size stops, not which way to trade.</td></tr>
+  <tr><td class="lab">Minute-scale autocorrelation</td><td><span class="chip good">Strong, and small</span></td><td>Index returns at 1 to 10 minutes carry first-lag autocorrelation of roughly −0.01 to −0.03, significant but economically negligible, gone by 20 minutes (Heston, Korajczyk &amp; Sadka 2010; stylised-facts surveys).</td><td>No.</td></tr>
+  <tr><td class="lab">First half-hour predicts last half-hour</td><td><span class="chip warn">Mixed</span></td><td>Robust in US ETFs 1993 to 2013 with R² near 1.5% (Gao, Han, Li &amp; Zhou 2018); present in 60+ futures (Baltussen et al. 2021); weak or absent in most Asia-Pacific markets (Limkriangkrai et al. 2023); a 2022 to 2026 SPX test finds it gone except when dealers are short gamma. One Indian working paper reports it on NIFTY futures; full text unavailable.</td><td>Marginal in ETFs. Doubtful in options after theta.</td></tr>
+  <tr><td class="lab">Opening-range breakout</td><td><span class="chip warn">Mixed</span></td><td>Profitable on QQQ 2016 to 2023 with a 10R target and no slippage (Zarattini &amp; Aziz 2023). On 7,000 US stocks the raw breakout is weak (Sharpe 0.48); the edge comes from a relative-volume filter (Zarattini, Barbon &amp; Aziz 2024). A practitioner NIFTY test 2017 to 2026 shows PF 1.23 before costs with 75% of profit from shorts.</td><td>Gross only. Costs cut 15 to 25% by the authors' own estimate.</td></tr>
+  <tr><td class="lab">Support, resistance, round numbers</td><td><span class="chip warn">Moderate, FX only</span></td><td>Published levels stop trends 61% of the time versus 56% for arbitrary levels (Osler 2000); take-profit orders cluster at round numbers, stops just beyond them (Osler 2003). No NIFTY study.</td><td>Unclear.</td></tr>
+  <tr><td class="lab">Candlestick patterns</td><td><span class="chip bad">Weak</span></td><td>No excess returns on DJIA stocks with bootstrap tests (Marshall, Young &amp; Rose 2006). Later studies find a handful of patterns significant on daily or hourly bars in specific markets; none on intraday Indian data.</td><td>Mostly no.</td></tr>
+  <tr><td class="lab">Gap fill (NIFTY)</td><td><span class="chip warn">Practitioner only</span></td><td>Gaps of 1% or more filled the same day only 29% of the time, 2016 to 2026 (Intraday Lab). Confirmed here: 14% for NIFTY, 0% for SENSEX.</td><td>Untested.</td></tr>
+  <tr><td class="lab">Brooks, Wyckoff, SMC, Volman, Beggs rules</td><td><span class="chip bad">None</span></td><td>No peer-reviewed validation of any framework. A 648-backtest study of SMC concepts on US index ETFs found none beat buy-and-hold, with forward-return t-statistics of 0.9 (sweep), 1.2 (order block) and −0.1 (fair value gap).</td><td>Unknown.</td></tr>
+  <tr><td class="lab">Retail index-option buying</td><td><span class="chip good">Strong</span></td><td>SEBI, September 2024: 93% of about 1 crore individual F&amp;O traders lost money over FY22 to FY24, aggregate ₹1.8 lakh crore; costs were 27% of gross losses; only 1% earned more than ₹1 lakh after costs.</td><td>The base rate you are trading against.</td></tr>
+</table></div>
+<p>Two practitioner frameworks are worth stating precisely because parts of them are testable. Brooks classifies each day as trend or range by about the 18th five-minute bar and only fades extremes in ranges or buys pullbacks in trends. Wyckoff's spring is a brief penetration below a range that closes back inside within a few bars. Both are hypotheses about session-level structure, not minute-level candles, which matters for the design in section 06.</p>
+
+<h2><span class="sec-no">04</span>What your own data says</h2>
+<p>Every effect in the literature was measured directly on the bundled data, plus the effects the current algorithm assumes. Numbers are in index points unless stated. The full output is in <code>research/pa_study.py</code>.</p>
+
+<h3>Volatility by time of day</h3>
+<figure>
+  <svg viewBox="0 0 860 300" role="img" aria-label="Median 5-minute range in NIFTY points by time of day. 09:15 is 74 points, falling to about 16 by 11:00, rising to 29 at 15:00.">
+    <g class="svg-text">
+      <line x1="56" y1="40" x2="56" y2="248" stroke="var(--rule)"/>
+      <line x1="56" y1="248" x2="840" y2="248" stroke="var(--rule)"/>
+      <g stroke="var(--grid)"><line x1="56" y1="196" x2="840" y2="196"/><line x1="56" y1="144" x2="840" y2="144"/><line x1="56" y1="92" x2="840" y2="92"/><line x1="56" y1="40" x2="840" y2="40"/></g>
+      <text x="48" y="252" text-anchor="end">0</text><text x="48" y="200" text-anchor="end">20</text><text x="48" y="148" text-anchor="end">40</text><text x="48" y="96" text-anchor="end">60</text><text x="48" y="44" text-anchor="end">80</text>
+      <text x="14" y="150" transform="rotate(-90 14 150)" text-anchor="middle">pts</text>
+    </g>
+    <g fill="var(--s1)">
+      <rect x="60" y="55.6" width="8" height="192.4" rx="2"><title>09:15 · 74.0 pts</title></rect><rect x="70" y="150" width="8" height="98" rx="2"><title>09:20 · 37.7</title></rect><rect x="80" y="165" width="8" height="83" rx="2"><title>09:25 · 31.9</title></rect>
+      <rect x="90" y="177.5" width="8" height="70.5" rx="2"><title>09:30 · 27.1</title></rect><rect x="100" y="180" width="8" height="68" rx="2"><title>09:35 · 26.2</title></rect><rect x="110" y="182" width="8" height="66" rx="2"><title>09:40 · 25.4</title></rect>
+      <rect x="120" y="185.9" width="8" height="62.1" rx="2"><title>09:45 · 23.9</title></rect><rect x="130" y="187" width="8" height="61" rx="2"><title>09:50 · 23.5</title></rect><rect x="140" y="188" width="8" height="60" rx="2"><title>09:55 · 23.1</title></rect>
+      <rect x="150" y="190.3" width="8" height="57.7" rx="2"><title>10:00 · 22.2</title></rect><rect x="160" y="192" width="8" height="56" rx="2"><title>10:05 · 21.5</title></rect><rect x="170" y="193" width="8" height="55" rx="2"><title>10:10 · 21.2</title></rect>
+      <rect x="180" y="194.7" width="8" height="53.3" rx="2"><title>10:15 · 20.5</title></rect><rect x="190" y="197" width="8" height="51" rx="2"><title>10:20 · 19.6</title></rect><rect x="200" y="199" width="8" height="49" rx="2"><title>10:25 · 18.8</title></rect>
+      <rect x="210" y="202.2" width="8" height="45.8" rx="2"><title>10:30 · 17.6</title></rect><rect x="220" y="203" width="8" height="45" rx="2"><title>10:35 · 17.3</title></rect><rect x="230" y="204" width="8" height="44" rx="2"><title>10:40 · 16.9</title></rect>
+      <rect x="240" y="205.1" width="8" height="42.9" rx="2"><title>10:45 · 16.5</title></rect><rect x="250" y="205.5" width="8" height="42.5" rx="2"><title>10:50 · 16.3</title></rect><rect x="260" y="206" width="8" height="42" rx="2"><title>10:55 · 16.2</title></rect>
+      <rect x="270" y="206.1" width="8" height="41.9" rx="2"><title>11:00 · 16.1</title></rect><rect x="280" y="206.5" width="8" height="41.5" rx="2"><title>11:05 · 16.0</title></rect><rect x="290" y="206.8" width="8" height="41.2" rx="2"><title>11:10 · 15.9</title></rect>
+      <rect x="300" y="206.9" width="8" height="41.1" rx="2"><title>11:15 · 15.8</title></rect><rect x="310" y="207" width="8" height="41" rx="2"><title>11:20 · 15.8</title></rect><rect x="320" y="206.5" width="8" height="41.5" rx="2"><title>11:25 · 16.0</title></rect>
+      <rect x="330" y="205.9" width="8" height="42.1" rx="2"><title>11:30 · 16.2</title></rect><rect x="340" y="206.4" width="8" height="41.6" rx="2"><title>11:35 · 16.0</title></rect><rect x="350" y="206.8" width="8" height="41.2" rx="2"><title>11:40 · 15.9</title></rect>
+      <rect x="360" y="206.9" width="8" height="41.1" rx="2"><title>11:45 · 15.8</title></rect><rect x="370" y="205.9" width="8" height="42.1" rx="2"><title>11:50 · 16.2</title></rect><rect x="380" y="205.3" width="8" height="42.7" rx="2"><title>11:55 · 16.4</title></rect>
+      <rect x="390" y="204.6" width="8" height="43.4" rx="2"><title>12:00 · 16.7</title></rect><rect x="400" y="206" width="8" height="42" rx="2"><title>12:05 · 16.2</title></rect><rect x="410" y="207.5" width="8" height="40.5" rx="2"><title>12:10 · 15.6</title></rect>
+      <rect x="420" y="209.3" width="8" height="38.7" rx="2"><title>12:15 · 14.9</title></rect><rect x="430" y="207" width="8" height="41" rx="2"><title>12:20 · 15.8</title></rect><rect x="440" y="205.5" width="8" height="42.5" rx="2"><title>12:25 · 16.3</title></rect>
+      <rect x="450" y="204.8" width="8" height="43.2" rx="2"><title>12:30 · 16.6</title></rect><rect x="460" y="206" width="8" height="42" rx="2"><title>12:35 · 16.2</title></rect><rect x="470" y="207" width="8" height="41" rx="2"><title>12:40 · 15.8</title></rect>
+      <rect x="480" y="207.2" width="8" height="40.8" rx="2"><title>12:45 · 15.7</title></rect><rect x="490" y="205.5" width="8" height="42.5" rx="2"><title>12:50 · 16.3</title></rect><rect x="500" y="204.5" width="8" height="43.5" rx="2"><title>12:55 · 16.7</title></rect>
+      <rect x="510" y="203.8" width="8" height="44.2" rx="2"><title>13:00 · 17.0</title></rect><rect x="520" y="205" width="8" height="43" rx="2"><title>13:05 · 16.5</title></rect><rect x="530" y="206" width="8" height="42" rx="2"><title>13:10 · 16.2</title></rect>
+      <rect x="540" y="206.7" width="8" height="41.3" rx="2"><title>13:15 · 15.9</title></rect><rect x="550" y="205" width="8" height="43" rx="2"><title>13:20 · 16.5</title></rect><rect x="560" y="203.5" width="8" height="44.5" rx="2"><title>13:25 · 17.1</title></rect>
+      <rect x="570" y="202.2" width="8" height="45.8" rx="2"><title>13:30 · 17.6</title></rect><rect x="580" y="203" width="8" height="45" rx="2"><title>13:35 · 17.3</title></rect><rect x="590" y="203.3" width="8" height="44.7" rx="2"><title>13:40 · 17.2</title></rect>
+      <rect x="600" y="203" width="8" height="45" rx="2"><title>13:45 · 17.3</title></rect><rect x="610" y="203.5" width="8" height="44.5" rx="2"><title>13:50 · 17.1</title></rect><rect x="620" y="203.8" width="8" height="44.2" rx="2"><title>13:55 · 17.0</title></rect>
+      <rect x="630" y="203.8" width="8" height="44.2" rx="2"><title>14:00 · 17.0</title></rect><rect x="640" y="204.5" width="8" height="43.5" rx="2"><title>14:05 · 16.7</title></rect><rect x="650" y="205.3" width="8" height="42.7" rx="2"><title>14:10 · 16.4</title></rect>
+      <rect x="660" y="205.9" width="8" height="42.1" rx="2"><title>14:15 · 16.2</title></rect><rect x="670" y="203.5" width="8" height="44.5" rx="2"><title>14:20 · 17.1</title></rect><rect x="680" y="201.5" width="8" height="46.5" rx="2"><title>14:25 · 17.9</title></rect>
+      <rect x="690" y="199.6" width="8" height="48.4" rx="2"><title>14:30 · 18.6</title></rect><rect x="700" y="201" width="8" height="47" rx="2"><title>14:35 · 18.1</title></rect><rect x="710" y="202" width="8" height="46" rx="2"><title>14:40 · 17.7</title></rect>
+      <rect x="720" y="202.2" width="8" height="45.8" rx="2"><title>14:45 · 17.6</title></rect><rect x="730" y="200" width="8" height="48" rx="2"><title>14:50 · 18.5</title></rect><rect x="740" y="192" width="8" height="56" rx="2"><title>14:55 · 21.5</title></rect>
+      <rect x="750" y="172.6" width="8" height="75.4" rx="2"><title>15:00 · 29.0</title></rect><rect x="760" y="186" width="8" height="62" rx="2"><title>15:05 · 23.8</title></rect><rect x="770" y="196" width="8" height="52" rx="2"><title>15:10 · 20.0</title></rect>
+      <rect x="780" y="209.5" width="8" height="38.5" rx="2"><title>15:15 · 14.8</title></rect><rect x="790" y="214" width="8" height="34" rx="2"><title>15:20 · 13.1</title></rect><rect x="800" y="216" width="8" height="32" rx="2"><title>15:25 · 12.3</title></rect>
+    </g>
+    <g class="svg-lab">
+      <text x="72" y="48">74 pts at 09:15</text>
+      <text x="274" y="197">16 pts at 11:00</text>
+      <text x="700" y="166" text-anchor="end">29 pts at 15:00</text>
+    </g>
+    <g class="svg-text">
+      <text x="64" y="268">09:15</text><text x="150" y="268">10:00</text><text x="270" y="268">11:00</text><text x="390" y="268">12:00</text><text x="510" y="268">13:00</text><text x="630" y="268">14:00</text><text x="750" y="268">15:00</text>
+      <text x="56" y="292">Median high-to-low range of each 5-minute window, NIFTY, 137 sessions</text>
+    </g>
+  </svg>
+  <figcaption><b>The U-shape is real and steep.</b> The first five minutes carry a median range of 74 points; by 11:00 it is 16. Half the day's total range is usually formed by 09:45. SENSEX shows the same shape at three times the scale (253 points at 09:15, about 55 at midday, 101 at 15:00). A stop expressed in fixed points is therefore roughly four times more likely to be hit by noise at the open than at noon.</figcaption>
+</figure>
+
+<h3>Directional effects, measured</h3>
+<div class="tbl"><table>
+  <tr><th>Effect tested</th><th class="num">NIFTY</th><th class="num">SENSEX</th><th>Reading</th></tr>
+  <tr><td class="lab">1-minute return autocorrelation, whole session</td><td class="num">+0.020 (t 4.5)</td><td class="num">0.000 (t 0.1)</td><td>Statistically visible on NIFTY, worth 0.2 points. Below the cost line by an order of magnitude.</td></tr>
+  <tr><td class="lab">15-minute autocorrelation, first hour</td><td class="num">−0.134 (t −2.2)</td><td class="num">−0.073 (t −1.2)</td><td>Mild reversal of 15-minute moves in the first hour. Consistent with the literature, and the opposite of the current trigger.</td></tr>
+  <tr><td class="lab">After a top-decile 15-minute move, next 15 minutes</td><td class="num">−1.6 pts (t −0.8)</td><td class="num">−3.2 pts (t −0.5)</td><td>Big moves do not continue. Same-sign rate 48% and 52%.</td></tr>
+  <tr><td class="lab">First 30 min predicts last 30 min (Gao et al.)</td><td class="num">48% agree, r −0.02</td><td class="num">49% agree, r +0.06</td><td>Absent in this sample.</td></tr>
+  <tr><td class="lab">First hour predicts rest of day</td><td class="num">r −0.15</td><td class="num">r −0.09</td><td>Slight reversal. Present in 2026 (−0.17) but not in November 2025 (−0.01).</td></tr>
+  <tr><td class="lab">Opening-range (15 min) breakout: back inside within 15 min</td><td class="num">72%</td><td class="num">80%</td><td>Almost every day breaks its opening range, and most breaks fail quickly. Only 24 to 25% reach one range-width before returning to the midpoint.</td></tr>
+  <tr><td class="lab">ORB entry to close, in break direction</td><td class="num">−9 pts (t −0.8)</td><td class="num">+6 pts (t +0.2)</td><td>No follow-through on average.</td></tr>
+  <tr><td class="lab">First touch of previous-day high or low, next 30 min</td><td class="num">+5 / −2 pts</td><td class="num">+12 / −14 pts</td><td>29 to 39 events each. Nothing significant; both hold and rejection outcomes are near zero.</td></tr>
+  <tr><td class="lab">Gap ≥ 0.5% fills the same day</td><td class="num">30% (n 27)</td><td class="num">35% (n 31)</td><td>Gaps above 1%: 14% and 0%. Large gaps are not faded by the market, but the day's move from the open runs against the gap on average.</td></tr>
+  <tr><td class="lab">Hammer, shooting star, engulfing on 1-min, next 3 bars</td><td class="num">all |t| &lt; 1.7</td><td class="num">all |t| &lt; 1.4</td><td>Several thousand patterns each. Effects of 0 to 2 points, inside the 3-point noise floor.</td></tr>
+  <tr><td class="lab">Same patterns on 5-min candles</td><td class="num">hammer −1.1 pts</td><td class="num">hammer −8.7 pts (t −3.0)</td><td>The one significant candle result points the wrong way: SENSEX 5-minute hammers are followed by further decline.</td></tr>
+  <tr><td class="lab">Higher-high plus higher-low structure on 5-min, next 30 min</td><td class="num">+0.8 pts (t 1.4)</td><td class="num">+2.8 pts (t 1.5)</td><td>Over 4,000 events. Entering only on a pullback candle removes even that.</td></tr>
+  <tr><td class="lab">Trend-day continuation: beyond OR by 0.5 range at 10:30, to close</td><td class="num">+32 pts, 69% (n 16)</td><td class="num">+122 pts, 62% (n 16)</td><td>Encouraging direction, far too few events, and it turns negative if checked at 10:45 or 11:00.</td></tr>
+</table></div>
+<div class="callout">
+  <p><b>Why the current algorithm cannot work as designed.</b> Its trigger is the mean of the last 15 one-minute returns crossing a threshold of about one point per minute. The table shows that after a large 15-minute move the next 15 minutes are, if anything, slightly negative. The algorithm then places a 6- to 15-point premium stop, about 8 to 20 spot points, against a market whose median 5-minute range in the first hour is 25 points. It is a continuation bet with a noise-sized stop in the noisiest hour of the day, taken eleven times before 10:00.</p>
+</div>
+
+<h2><span class="sec-no">05</span>Candidate strategies, priced</h2>
+<p>Each rule below was run as a single-position strategy with the same premium model and costs, and compared with two controls: the current momentum trigger and a textbook opening-range breakout. The chart shows net rupees over the sample; the table carries the statistics that matter.</p>
+<figure>
+  <div class="legend"><span class="n">NIFTY</span><span class="s">SENSEX</span></div>
+  <svg viewBox="0 0 860 470" role="img" aria-label="Net profit in thousand rupees for nine strategies on NIFTY and SENSEX. Most bars are negative; gap fade on NIFTY is the largest positive at 57 thousand.">
+    <g class="svg-text">
+      <line x1="486" y1="18" x2="486" y2="430" stroke="var(--ink-3)"/>
+      <g stroke="var(--grid)"><line x1="286" y1="18" x2="286" y2="430"/><line x1="386" y1="18" x2="386" y2="430"/><line x1="586" y1="18" x2="586" y2="430"/><line x1="686" y1="18" x2="686" y2="430"/></g>
+      <text x="286" y="450" text-anchor="middle">−100k</text><text x="386" y="450" text-anchor="middle">−50k</text><text x="486" y="450" text-anchor="middle">0</text><text x="586" y="450" text-anchor="middle">+50k</text><text x="686" y="450" text-anchor="middle">+100k</text>
+      <text x="486" y="466" text-anchor="middle">Net ₹ after costs and time decay, 132 to 134 traded sessions</text>
+    </g>
+    <!-- rows: y0 = 24 + 45*i ; NIFTY bar y0+2 h 16 ; SENSEX y0+21 h 16 ; scale 2px per 1k -->
+    <g class="svg-lab" text-anchor="end">
+      <text x="216" y="44">Current engine, full pipeline</text>
+      <text x="216" y="89">Momentum 15m, 1 trade/day</text>
+      <text x="216" y="134">Momentum 15m, up to 12/day</text>
+      <text x="216" y="179">Opening-range breakout</text>
+      <text x="216" y="224">Fade first 30 min, hold to 15:15</text>
+      <text x="216" y="269">Fade gap ≥ 0.5%</text>
+      <text x="216" y="314">First-hour 15m reversal, 15 min</text>
+      <text x="216" y="359">Trend day at 10:30, hold to close</text>
+      <text x="216" y="404">Trend day at 11:00, hold to close</text>
+    </g>
+    <g>
+      <rect fill="var(--s1)" x="388.2" y="26" width="97.8" height="16" rx="2"><title>Current engine NIFTY −48,908</title></rect><rect fill="var(--s2)" x="350.8" y="45" width="135.2" height="16" rx="2"><title>Current engine SENSEX −67,595</title></rect>
+      <rect fill="var(--s1)" x="444" y="71" width="42" height="16" rx="2"><title>NIFTY −20,992</title></rect><rect fill="var(--s2)" x="472.9" y="90" width="13.1" height="16" rx="2"><title>SENSEX −6,540</title></rect>
+      <rect fill="var(--s1)" x="401.2" y="116" width="84.8" height="16" rx="2"><title>NIFTY −42,392</title></rect><rect fill="var(--s2)" x="415.3" y="135" width="70.7" height="16" rx="2"><title>SENSEX −35,344</title></rect>
+      <rect fill="var(--s1)" x="231.5" y="161" width="254.5" height="16" rx="2"><title>NIFTY −127,248</title></rect><rect fill="var(--s2)" x="224.1" y="180" width="261.9" height="16" rx="2"><title>SENSEX −130,971</title></rect>
+      <rect fill="var(--s1)" x="389.9" y="206" width="96.1" height="16" rx="2"><title>NIFTY −48,066</title></rect><rect fill="var(--s2)" x="426.8" y="225" width="59.2" height="16" rx="2"><title>SENSEX −29,612</title></rect>
+      <rect fill="var(--s1)" x="488" y="251" width="115" height="16" rx="2"><title>NIFTY +57,479</title></rect><rect fill="var(--s2)" x="446" y="270" width="40" height="16" rx="2"><title>SENSEX −20,010</title></rect>
+      <rect fill="var(--s1)" x="472.8" y="296" width="13.2" height="16" rx="2"><title>NIFTY −6,610</title></rect><rect fill="var(--s2)" x="488" y="315" width="8.9" height="16" rx="2"><title>SENSEX +4,471</title></rect>
+      <rect fill="var(--s1)" x="488" y="341" width="8.1" height="16" rx="2"><title>NIFTY +4,054</title></rect><rect fill="var(--s2)" x="488" y="360" width="26.1" height="16" rx="2"><title>SENSEX +13,044</title></rect>
+      <rect fill="var(--s1)" x="465.7" y="386" width="20.3" height="16" rx="2"><title>NIFTY −10,156</title></rect><rect fill="var(--s2)" x="461.5" y="405" width="24.5" height="16" rx="2"><title>SENSEX −12,247</title></rect>
+    </g>
+    <g class="svg-text">
+      <text x="383" y="38" text-anchor="end">−49k</text><text x="346" y="57" text-anchor="end">−68k</text>
+      <text x="490" y="173">−127k</text><text x="490" y="192">−131k</text>
+      <text x="607" y="263">+57k</text><text x="441" y="282" text-anchor="end">−20k</text>
+      <text x="500" y="353">+4k</text><text x="518" y="372">+13k</text>
+    </g>
+  </svg>
+  <figcaption><b>Every short-horizon rule loses on both indices.</b> The two controls are worst. The one large positive, fading gaps of 0.5% or more on NIFTY, is negative on SENSEX and is examined below.</figcaption>
+</figure>
+<div class="tbl"><table>
+  <tr><th>Strategy</th><th class="num">Trades N / S</th><th class="num">Net ₹ NIFTY</th><th class="num">Net ₹ SENSEX</th><th class="num">t (NIFTY)</th><th class="num">Profit factor N / S</th><th>Passes the four bars?</th></tr>
+  <tr class="ctrl"><td class="lab">Current engine, full pipeline</td><td class="num">1448 / 1525</td><td class="num neg">−48,908</td><td class="num neg">−67,595</td><td class="num">−1.6</td><td class="num">0.90 / 0.83</td><td><span class="chip bad">No</span></td></tr>
+  <tr class="ctrl"><td class="lab">Momentum 15m, 1 trade a day</td><td class="num">137 / 139</td><td class="num neg">−20,992</td><td class="num neg">−6,540</td><td class="num">−2.7</td><td class="num">0.64 / 0.88</td><td><span class="chip bad">No, significantly negative</span></td></tr>
+  <tr class="ctrl"><td class="lab">Opening-range breakout, stop at mid, target 1×</td><td class="num">134 / 130</td><td class="num neg">−127,248</td><td class="num neg">−130,971</td><td class="num">−3.9</td><td class="num">0.48 / 0.49</td><td><span class="chip bad">No, significantly negative</span></td></tr>
+  <tr><td class="lab">Fade the first 30 minutes, hold to 15:15</td><td class="num">137 / 139</td><td class="num neg">−48,066</td><td class="num neg">−29,612</td><td class="num">−2.1</td><td class="num">0.62 / 0.78</td><td><span class="chip bad">No</span></td></tr>
+  <tr><td class="lab">Fade gap ≥ 0.5%, target previous close</td><td class="num">34 / 42</td><td class="num pos">+57,479</td><td class="num neg">−20,010</td><td class="num">+1.6</td><td class="num">2.05 / 0.82</td><td><span class="chip warn">Fails bars 1, 2 and 3</span></td></tr>
+  <tr><td class="lab">First-hour 15m reversal, hold 15 min</td><td class="num">132 / 134</td><td class="num neg">−6,610</td><td class="num pos">+4,471</td><td class="num">−0.4</td><td class="num">0.91 / 1.06</td><td><span class="chip bad">No, breakeven before spread</span></td></tr>
+  <tr><td class="lab">Trend day at 10:30, hold to close</td><td class="num">16 / 16</td><td class="num pos">+4,054</td><td class="num pos">+13,044</td><td class="num">+0.3</td><td class="num">1.18 / 1.62</td><td><span class="chip warn">Fails bars 1 and 4</span></td></tr>
+  <tr><td class="lab">Trend day at 11:00, hold to close</td><td class="num">20 / 23</td><td class="num neg">−10,156</td><td class="num neg">−12,247</td><td class="num">−0.7</td><td class="num">0.68 / 0.73</td><td><span class="chip bad">No</span></td></tr>
+</table></div>
+
+<h3>The two that looked promising</h3>
+<p><b>Gap fade.</b> On NIFTY the result is stable across thresholds of 0.4% to 0.75% and entry times of 09:20 to 09:45, always between +₹27,000 and +₹68,000. On SENSEX the same grid is negative at every cell, between −₹6,000 and −₹38,000. Inside the NIFTY result, all 17 gap-up trades together lost ₹8,000 while the 17 gap-down trades made ₹65,500, and ₹45,800 of that came from nine April 2026 sessions. This is a description of buying dips during one rally, not a property of gaps.</p>
+<p><b>Trend-day continuation.</b> Positive on both indices at the 10:15 and 10:30 checks with a half-range threshold, but 16 trades each, and the same rule checked at 10:45 loses on both. A rule whose sign depends on a 15-minute timing choice has not been found; it has been fitted.</p>
+<p>Without time decay, as if traded through futures, both improve materially (gap fade on NIFTY +₹83,900; trend day at 10:30 +₹13,600 and +₹23,000) because multi-hour holds are where theta hurts most. That is a statement about instrument choice, not about the edge.</p>
+
+<h2><span class="sec-no">06</span>What this means for the algorithm</h2>
+<p>The request was a price-action system without indicators. The evidence supports building one, but only in a specific shape, and it is nearly the opposite of what exists today.</p>
+<ol class="rules">
+  <li><b>Move up the timeframe.</b> Nothing at 1 to 5 minutes clears the noise floor or the cost line on either index. Decisions should be made on 15-minute closes and session structure: the opening range, the previous day's range, the gap, and whether the day has declared itself a trend or a range by mid-morning. This is what Brooks and Wyckoff actually describe, stripped of the candle folklore.</li>
+  <li><b>One or two trades a day, not twelve.</b> At ₹70 to ₹90 statutory plus spread per round trip, eleven trades a day cost about ₹800 to ₹1,500 before any market risk. The current engine's gross profit over the whole sample was ₹49,000 on NIFTY; its costs were ₹98,000.</li>
+  <li><b>Scale stops to the hour.</b> Use the measured 5-minute range profile: a stop of roughly 1.5 times the median 15-minute move for that hour (about 20 points at 11:00 on NIFTY, 40 or more in the first half hour) rather than a fixed 6 to 15 premium points. Enter after 09:45, when half the day's range has already formed, or not at all in the first half hour.</li>
+  <li><b>Choose the instrument for the hold time.</b> A rule that holds until 15:15 pays a full day of theta. For session-length holds, index futures or a deep in-the-money option with delta above 0.85 keep most of the move and lose far less to decay. The buy-only weekly ATM or near-ITM option suits holds of under an hour, and nothing in this study supports holds that short.</li>
+  <li><b>Remove what is measured to be inert or harmful.</b> The GARCH mean trigger, the 20-point counter-trend exit on SENSEX, the leaky SVM and XGBoost vetoes, and every 1-minute candle skill. Keep the risk manager's breakeven and trailing mechanics, which are sound, once the stop distances are rescaled.</li>
+  <li><b>Validate before trading.</b> Two hypotheses are worth carrying forward as hypotheses: gap-day behaviour conditioned on gap direction and prior-day trend, and trend-day continuation once a day has moved beyond its opening range by mid-morning. Each needs at least three years of 1-minute data for both indices (NSE sells this), a walk-forward test with the first two years as the only fitting window, and at least 100 trades in the held-out year with t ≥ 2 on both indices. Until then they are research, not a strategy.</li>
+</ol>
+<div class="callout">
+  <p><b>A candidate specification to test, not to trade.</b> At 10:30, classify the day. If price sits beyond the 09:15 to 09:30 range by at least half that range's width, the day is a trend day: enter in that direction on the next 15-minute close that holds, stop at the far side of the opening range, exit at 15:15, one trade. If price is inside the opening range at 10:30 and the range is at least 60 NIFTY points, the day is a range day: fade the next touch of the range edge on a 15-minute close back inside, stop 0.25 range beyond the edge, target the opposite edge, at most two trades. Skip expiry days and days with a gap above 1%. This encodes the only two structural effects with any support here, and it can be fully evaluated in the existing harness in under a minute per index.</p>
+</div>
+
+<h2><span class="sec-no">07</span>Limitations</h2>
+<ul class="tight">
+  <li>Six and a half months, not twelve, with a four-month hole. The 2026 portion is a single regime. Any conclusion about a directional effect is provisional; the conclusions about noise, costs and the volatility profile are not, because those are stable properties.</li>
+  <li>Option prices are modelled, not observed. Fixed delta and linear decay flatter long holds and ignore volatility crush after gaps. Real option P&amp;L would likely be worse for the multi-hour strategies.</li>
+  <li>Intra-bar exits are evaluated at the adverse extreme first. This is conservative for stops and mildly pessimistic for trailing exits.</li>
+  <li>Around 60 rule variants were examined. With that many looks, one or two t-statistics near 1.6 are expected by chance alone, which is why bars 2 to 4 in section 01 exist.</li>
+</ul>
+
+<h2><span class="sec-no">08</span>Sources</h2>
+<ol class="src">
+  <li>Gao, Han, Li &amp; Zhou (2018). Market intraday momentum. <i>Journal of Financial Economics</i> 129(2). <a href="https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2440866">SSRN</a></li>
+  <li>Baltussen, Da, Lammers &amp; Martens (2021). Hedging demand and market intraday momentum. <i>JFE</i>. <a href="https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3760365">SSRN</a></li>
+  <li>Limkriangkrai, Chai &amp; Zheng (2023). Market intraday momentum in Asia-Pacific. <i>Pacific-Basin Finance Journal</i>. <a href="https://researchmgt.monash.edu/ws/files/519509174/494419119_oa.pdf">PDF</a></li>
+  <li>Heston, Korajczyk &amp; Sadka (2010). Intraday patterns in the cross-section of stock returns. <i>Journal of Finance</i>. <a href="https://papers.ssrn.com/sol3/papers.cfm?abstract_id=1192643">SSRN</a></li>
+  <li>Zarattini &amp; Aziz (2023). Can day trading really be profitable? <a href="https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4416622">SSRN</a>; Zarattini, Barbon &amp; Aziz (2024). A profitable day trading strategy for the U.S. equity market. <a href="https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4729284">SSRN</a></li>
+  <li>Singh &amp; Gangwar (2018). Intraday volatility patterns in NIFTY futures. <a href="https://mpra.ub.uni-muenchen.de/89689/">MPRA</a></li>
+  <li>Marshall, Young &amp; Rose (2006). Candlestick technical trading strategies. <i>Journal of Banking &amp; Finance</i> 30(8). <a href="https://ideas.repec.org/a/eee/jbfina/v30y2006i8p2303-2323.html">IDEAS</a></li>
+  <li>Osler (2000). Support for resistance. <i>FRBNY Economic Policy Review</i>. <a href="https://papers.ssrn.com/sol3/papers.cfm?abstract_id=888805">SSRN</a>; Osler (2003). Currency orders and exchange rate dynamics. <i>Journal of Finance</i>. <a href="https://onlinelibrary.wiley.com/doi/abs/10.1111/1540-6261.00588">Wiley</a></li>
+  <li>Chhimwal, Pandey &amp; Pandey (2025). Expiry-day effects in NIFTY and Bank Nifty. <i>Review of Derivatives Research</i>. <a href="https://ideas.repec.org/a/kap/revdev/v28y2025i3d10.1007_s11147-025-09221-8.html">IDEAS</a></li>
+  <li>SEBI (September 2024). Updated study on individual traders in equity F&amp;O, FY22 to FY24. <a href="https://www.sebi.gov.in/media-and-notifications/press-releases/sep-2024/updated-sebi-study-reveals-93-of-individual-traders-incurred-losses-in-equity-fando-between-fy22-and-fy24-aggregate-losses-exceed-1-8-lakh-crores-over-three-years_86906.html">SEBI</a></li>
+  <li>Barber, Lee, Liu &amp; Odean (2004). Do individual day traders make money? Evidence from Taiwan. <a href="https://faculty.haas.berkeley.edu/odean/papers/Day%20Traders/Day%20Trade%20040330.pdf">PDF</a></li>
+  <li>Practitioner, unaudited: Intraday Lab NIFTY ORB and gap studies (<a href="https://intradaylab.com/blog/nifty-orb-breakout-strategy-backtest">ORB</a>, <a href="https://intradaylab.com/blog/nifty-gap-up-history-analysis">gaps</a>); StatOasis SMC backtests (<a href="https://statoasis.com/overfit/research/ict-backtest-what-survives">link</a>); Zerodha STT revision bulletin, April 2026 (<a href="https://zerodha.com/marketintel/bulletin/445377/revision-in-stt-securities-transaction-tax-from-1st-april-2026">link</a>); Dhan pricing (<a href="https://dhan.co/pricing/">link</a>).</li>
+  <li>This study: <code>research/pa_study.py</code>, <code>research/pa_strategy.py</code> and <code>backtest_12m.py</code> in the AI-trading-algo repository, run on <code>algo_vpin_v2/data/*_12m_1min.csv.gz</code>.</li>
+</ol>
+</div>
