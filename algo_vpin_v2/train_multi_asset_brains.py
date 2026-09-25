@@ -319,12 +319,11 @@ class MultiAssetBrainTrainer:
         ann_ok = ann_brain.train()
         logger.info(f"Deep ANN Model trained & saved to {ann_path} (Status: {ann_ok})")
 
-        # Also save default active models if NIFTY
+        # Also refresh the root-level ANN model if NIFTY (ann_brain.py loads "ann_model.joblib" relative to CWD).
+        # Root-level svm/xgb joblib files are not loaded by anything, so they are no longer written.
         if sym_clean == "NIFTY":
-            joblib.dump(svm_brain.model, ROOT_DIR / "svm_model.joblib")
-            joblib.dump(xgb_brain.model, ROOT_DIR / "xgb_model.joblib")
             joblib.dump(ann_brain.model, ROOT_DIR / "ann_model.joblib")
-            logger.info("Synchronized primary production models (svm_model.joblib, xgb_model.joblib, ann_model.joblib).")
+            logger.info("Synchronized primary production ANN model (ann_model.joblib).")
 
         logger.info("=" * 80)
         logger.info(f"  COMPLETED TRAINING FOR {sym_clean}: All 3 Brains Ready & Saved!")
