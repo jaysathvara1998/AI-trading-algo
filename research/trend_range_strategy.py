@@ -21,7 +21,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from pa_study import load, tstat
 from pa_strategy import PARAMS, DELTA, THETA_PCT, SLIP, costs
 
-EXPIRY_WEEKDAY = {"nifty": 1, "sensex": 3}          # NSE weekly expiry Tuesday, BSE Thursday (from Sep 2025)
+def expiry_weekday(sym, date):
+    """Weekly expiry weekday by date (Mon=0). NIFTY: Thu until Aug 2025, Tue after. SENSEX: Fri until Dec 2024, Tue Jan-Aug 2025, Thu after."""
+    d = pd.Timestamp(date); d = d.tz_localize(None) if d.tzinfo is not None else d
+    if sym == "nifty":
+        return 3 if d < pd.Timestamp("2025-09-01") else 1
+    if d < pd.Timestamp("2025-01-01"): return 4
+    if d < pd.Timestamp("2025-09-01"): return 1
+    return 3
 DEFAULTS = dict(or_bars=15, classify_bar=75, trend_k=0.5, min_range_pts={"nifty": 60.0, "sensex": 210.0},
                 range_stop_k=0.25, max_range_trades=2, max_gap_pct=1.0, exit_bar=360, skip_expiry=True)
 
@@ -40,7 +47,7 @@ class TrendRangeStrategy:
             gap = abs(g.open.values[0] - prev.close.iloc[-1]) / prev.close.iloc[-1] * 100
             if gap > p["max_gap_pct"]:
                 return "SKIP_GAP", orh, orl, w
-        if p["skip_expiry"] and pd.Timestamp(g.timestamp.iloc[0]).weekday() == EXPIRY_WEEKDAY[self.sym]:
+        if p["skip_expiry"] and pd.Timestamp(g.timestamp.iloc[0]).weekday() == expiry_weekday(self.sym, g.timestamp.iloc[0]):
             return "SKIP_EXPIRY", orh, orl, w
         pc = c[p["classify_bar"]]
         if pc >= orh + p["trend_k"] * w: return "TREND_UP", orh, orl, w
@@ -125,14 +132,18 @@ def fmt(s):
 
 
 def main():
-    ap = argparse.ArgumentParser(); ap.add_argument("--grid", action="store_true"); ap.add_argument("--out", default=None); a = ap.parse_args()
+    ap = argparse.ArgumentParser(); ap.add_argument("--grid", action="store_true"); ap.add_argument("--out", default=None)
+    ap.add_argument("--data", default="12m", help="data set tag: 12m (bundled) or 3y (Dhan download)"); a = ap.parse_args()
     results = {}
     for sym in ("nifty", "sensex"):
-        df = load(sym); days = [g.reset_index(drop=True) for _, g in df.groupby("date", sort=True)]; dates = [g.date.iloc[0] for g in days]
-        print(f"\n===== {sym.upper()} ({len(days)} sessions) =====")
+        df = load(sym, a.data); days = [g.reset_index(drop=True) for _, g in df.groupby("date", sort=True)]; dates = [g.date.iloc[0] for g in days]
+        print(f"\n===== {sym.upper()} ({len(days)} sessions, data={a.data}) =====")
         strat = TrendRangeStrategy(sym)
         t, kinds = run(sym, days, dates, strat)
         print("day classification:", kinds)
+        if not t.empty:
+            t["year"] = pd.to_datetime(t.date.astype(str)).dt.year
+            print("per-year net:", {int(y): (int(len(x)), round(float(x.net.sum()))) for y, x in t.groupby("year")})
         rows = [summarize(t, "BASE spec (options, with theta)"),
                 summarize(t[t.kind == "TREND"], "  trend-day trades only"),
                 summarize(t[t.kind == "RANGE"], "  range-day trades only"),
