@@ -1,0 +1,24 @@
+{
+  "last_audit_date": "2026-09-25",
+  "timestamp": "2026-09-25T12:14:13.043730+05:30",
+  "total_trades": 5,
+  "win_rate": 0.2,
+  "net_pnl_inr": -1604.85,
+  "quant_metrics": {
+    "wins": 1,
+    "losses": 4,
+    "chop_losses": 3,
+    "bleed_losses": 0,
+    "reversal_losses": 1,
+    "best_trade_pnl": 1415.6999999999982,
+    "worst_trade_pnl": -880.7500000000007
+  },
+  "adapted_rules": {
+    "max_daily_trades": 5,
+    "xgb_min_prob_threshold": 0.75,
+    "instant_sl_cut": true,
+    "avoid_chop_zone": true
+  },
+  "summary_takeaway": "Win Rate: 20% | Net: INR -1,605. Max Trades: 5, XGB Min Conf: 75%.",
+  "ai_reflection": "Here's a razor-sharp 3-bullet point institutional critique:\n\n1.  **Key Strength:** The \"RUNNER_TRAILING_HIT\" on the NIFTY 22900 CALL (+INR 1,415.7) demonstrates robust profit capture and effective trade management when a directional move materializes, preventing premature exits on winning positions.\n2.  **Key Vulnerability / Mistake:** A glaring 80% loss rate, primarily driven by immediate \"STOP_LOSS_HIT\" or \"MULTI_BAR_REVERSAL_EXIT\" across four trades, indicates critical issues in initial entry validation, strike selection, or directional conviction, leading to significant unnecessary drawdown.\n3.  **Concrete Actionable Rule for Tomorrow's Pre-Market Plan:** Implement a mandatory 'Conviction Filter' requiring explicit confluence of at least two independent, high-probability signals (e.g., trend confirmation + volume breakout) before initiating *any* new trade, specifically targeting a reduction in trades that immediately hit stops."
+}

@@ -1,0 +1,10 @@
+{
+  "max_daily_trades": 12,
+  "xgb_min_prob_threshold": 0.8,
+  "post_trade_cooldown_bars": 3,
+  "avoid_equilibrium_chop": true,
+  "equilibrium_buffer_pts": 12.0,
+  "instant_sl_cut": true,
+  "last_updated": "",
+  "learning_notes": ""
+}
