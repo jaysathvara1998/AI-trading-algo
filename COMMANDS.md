@@ -2,6 +2,15 @@
 
 All commands run from the project root. Credentials are read from `.env` (copy `.env.example`).
 
+**Broker: Zerodha Kite Connect** (`BROKER=kite`, default). Kite access tokens expire every morning, so before
+starting the bot each day run:
+
+```powershell
+python kite_login.py
+```
+It prints the Kite login URL; log in, copy the `request_token` from the redirect URL, paste it, and the daily
+token is saved to `Dependencies/kite_token_<date>.txt`. Set `BROKER=dhan` in `.env` to use the old Dhan path.
+
 ---
 
 ## 1. Live / Simulation Engine (`algo_vpin_v2`)

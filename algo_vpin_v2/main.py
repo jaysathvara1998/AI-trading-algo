@@ -35,6 +35,7 @@ import pandas as pd
 
 from algo_vpin_v2.config import AppConfig, CONFIG, InstrumentMode, ExecutionMode, TradeStrategyMode
 from algo_vpin_v2.data_feed import DhanDataFeed, BarOHLCV
+from algo_vpin_v2.kite_feed import KiteDataFeed
 from algo_vpin_v2.vpin import VPINCalculator, ToxicityRegime
 from algo_vpin_v2.garch_engine import GARCHEngine, DirectionalSignal
 from algo_vpin_v2.macro_features import MacroFeatureEngine
@@ -78,7 +79,11 @@ class AlgoVPINRunner:
         
         # Humanoid Cognitive Agent & Pipeline Components
         self.humanoid = HumanoidTraderAgent(agent_name="AURA-v2 (Humanoid Quant)")
-        self.data_feed = DhanDataFeed(self.config)
+        if str(getattr(self.config, "broker", "kite")).lower() == "kite":
+            self.data_feed = KiteDataFeed(self.config)
+        else:
+            self.data_feed = DhanDataFeed(self.config)
+        logger.info(f"[BROKER] {self.config.broker.upper()} data feed initialised (authenticated={getattr(self.data_feed, 'authenticated', self.data_feed.tradehull_client is not None)})")
         self.vpin_calc = VPINCalculator(self.config.vpin)
         self.garch_engine = GARCHEngine(self.config.garch)
         self.macro_engine = MacroFeatureEngine()
@@ -1003,6 +1008,9 @@ def main():
             bars_df = engine.data_feed.generate_synthetic_bars(n_bars=args.bars, start_price=start_price)
             engine.run_simulation(bars_df)
         else:
+            if str(engine.config.broker).lower() == "kite" and not getattr(engine.data_feed, "authenticated", False):
+                logger.critical("[BROKER] Kite session is not authenticated. Run `python kite_login.py` first, then start the bot.")
+                sys.exit(2)
             try:
                 asyncio.run(engine.run_live_session())
             except (KeyboardInterrupt, SystemExit, asyncio.CancelledError):

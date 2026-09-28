@@ -2,7 +2,10 @@
 # but note: algo_vpin_v2/data_feed.py and skills/price_action_skill.py use `Any` without
 # importing it, which only Python 3.14's lazy annotations tolerate. Use 3.14 to be safe.
 
-# Broker (Dhan) - Tradehull handles PIN+TOTP login and creates the Dependencies/ folder
+# Broker: Zerodha Kite Connect (default) - daily token via kite_login.py
+kiteconnect>=5.0.0
+
+# Broker (Dhan, legacy: BROKER=dhan) - Tradehull handles PIN+TOTP login and creates the Dependencies/ folder
 dhanhq>=2.2.0
 Dhan-Tradehull>=3.3.2
 

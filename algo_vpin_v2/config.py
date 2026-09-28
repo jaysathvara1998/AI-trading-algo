@@ -64,6 +64,12 @@ STATIC_TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 # Google Gemini AI Agent API Key (Optional - for advanced LLM reflection & autonomous skill generation)
 STATIC_GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 
+# Broker selection and Zerodha Kite Connect credentials (daily access token via kite_login.py)
+STATIC_BROKER = os.getenv("BROKER", "kite").strip().lower()
+STATIC_KITE_API_KEY = os.getenv("KITE_API_KEY", "")
+STATIC_KITE_API_SECRET = os.getenv("KITE_API_SECRET", "")
+STATIC_KITE_ACCESS_TOKEN = os.getenv("KITE_ACCESS_TOKEN", "")
+
 if not STATIC_DHAN_CLIENT_ID:
     logger.warning("DHAN_CLIENT_ID is not set. Copy .env.example to .env and fill in your credentials.")
 
@@ -298,7 +304,16 @@ class GeminiConfig:
 
 
 @dataclass
+class KiteConfig:
+    api_key: str = STATIC_KITE_API_KEY
+    api_secret: str = STATIC_KITE_API_SECRET
+    access_token: str = STATIC_KITE_ACCESS_TOKEN
+
+
+@dataclass
 class AppConfig:
+    broker: str = STATIC_BROKER            # "kite" or "dhan"
+    kite: KiteConfig = field(default_factory=KiteConfig)
     dhan: DhanAPIConfig = field(default_factory=DhanAPIConfig)
     market: MarketConfig = field(default_factory=MarketConfig)
     vpin: VPINConfig = field(default_factory=VPINConfig)

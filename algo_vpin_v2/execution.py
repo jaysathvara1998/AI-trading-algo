@@ -64,7 +64,7 @@ class OrderExecutionRouter:
         if self.is_paper:
             logger.info(f"[{self.track_label}] Operating in PAPER TRADING simulation mode.")
         else:
-            logger.warning(f"[{self.track_label}] Operating in LIVE DhanHQ Order Execution Mode.")
+            logger.warning(f"[{self.track_label}] Operating in LIVE broker order execution mode.")
 
     def notify(self, message: str):
         logger.info(f"[NOTIFY] {message}")
