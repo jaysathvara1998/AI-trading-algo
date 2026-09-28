@@ -224,6 +224,9 @@ class ANNBrain:
             return 0, 0.50, {'PUT': 0.33, 'HOLD': 0.34, 'CALL': 0.33}
 
     def save_model(self, path: Optional[Path] = None):
+        from .config import CONFIG as _CFG
+        if not getattr(_CFG, "persist_state", True):
+            return False
         target = path or self.model_path
         if self.is_trained and self.model is not None:
             try:

@@ -198,6 +198,9 @@ class VirtualShadowLearner:
         """Persists closed virtual trade to shadow history CSV"""
         file_exists = self.shadow_csv.exists()
         df = pd.DataFrame([res])
+        from .config import CONFIG as _CFG
+        if not getattr(_CFG, "persist_state", True):
+            return
         df.to_csv(self.shadow_csv, mode="a", index=False, header=not file_exists)
 
     def analyze_session_allocation(self) -> Dict[str, any]:

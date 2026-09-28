@@ -142,7 +142,7 @@ class XGBoostBrain:
         Generates directional prediction (+1 / -1) and confidence probability (0.0 to 1.0).
         """
         if not self.is_trained or self.model is None:
-            return 1, 0.50
+            return 0, 0.50  # neutral when untrained (never a directional default)
 
         x_arr = np.array([feature_vector], dtype=np.float32)
         try:
@@ -165,6 +165,9 @@ class XGBoostBrain:
             return {}
 
     def save_model(self, file_path: Optional[Path] = None):
+        from .config import CONFIG as _CFG
+        if not getattr(_CFG, "persist_state", True):
+            return False
         """Saves trained XGBoost brain to disk"""
         if not self.is_trained or self.model is None:
             return

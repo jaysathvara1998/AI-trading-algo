@@ -8,7 +8,7 @@ Detects high-probability candlestick patterns & institutional structural trigger
 - Range / Consolidation Breakout
 """
 
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Any
 import numpy as np
 
 from .base_skill import BaseTradingSkill, SkillResult

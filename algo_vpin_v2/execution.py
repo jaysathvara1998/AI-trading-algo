@@ -68,6 +68,46 @@ class OrderExecutionRouter:
 
     def notify(self, message: str):
         logger.info(f"[NOTIFY] {message}")
+        try:
+            from .telegram_notifier import send_telegram_async
+            send_telegram_async(f"<b>[{self.track_label}]</b> {message}")
+        except Exception:
+            pass
+
+    def _place_live_order(self, symbol: str, quantity: int, side: str) -> Optional[str]:
+        """Places a MARKET intraday order via Tradehull and verifies it was not rejected.
+        Returns the broker order id, or None on ANY failure (caller must not assume a position)."""
+        if self.tradehull_client is None:
+            logger.critical(f"[{self.track_label}] LIVE order requested but no broker client is connected. Order NOT placed.")
+            return None
+        sym_u = symbol.upper()
+        if "SENSEX" in sym_u or "BANKEX" in sym_u:
+            exch = "BFO"
+        elif "NATGAS" in sym_u or "CRUDE" in sym_u:
+            exch = "MCX"
+        else:
+            exch = "NFO"
+        try:
+            order_id = self.tradehull_client.order_placement(
+                tradingsymbol=symbol, exchange=exch, quantity=int(quantity), price=0, trigger_price=0,
+                order_type="MARKET", transaction_type=side, trade_type="MIS"
+            )
+        except Exception as e:
+            logger.critical(f"[{self.track_label}] Broker order call raised: {e}")
+            return None
+        if not order_id:
+            logger.critical(f"[{self.track_label}] Broker returned no order id for {side} {quantity} {symbol}. Treating as NOT placed.")
+            return None
+        try:
+            status = self.tradehull_client.get_order_status(str(order_id))
+        except Exception as e:
+            status = f"UNKNOWN ({e})"
+        status_s = str(status).upper()
+        if "REJECT" in status_s or "CANCEL" in status_s:
+            logger.critical(f"[{self.track_label}] Order {order_id} {status_s}. Treating as NOT placed.")
+            return None
+        logger.info(f"[{self.track_label}] Broker order {order_id} status={status_s} ({side} {quantity} {symbol} on {exch})")
+        return str(order_id)
 
     def get_available_capital(self) -> float:
         """Uses simulation capital (₹50,000) in Paper Trading mode, and queries live Dhan balance in Live mode."""
@@ -116,34 +156,13 @@ class OrderExecutionRouter:
         order_id = f"V2_PAPER_{self.order_counter}"
         self.order_counter += 1
 
-        # Live DhanHQ Order Dispatch
+        # Live DhanHQ Order Dispatch: the position is recorded ONLY if the broker accepted the order
         if not self.is_paper:
-            if self.tradehull_client is not None:
-                try:
-                    exch = self.market_cfg.exchange_segment
-                    if "NIFTY" in symbol or "BANKNIFTY" in symbol:
-                        exch = "NSE_FNO"
-                    elif "SENSEX" in symbol:
-                        exch = "BSE_FNO"
-
-                    resp = self.tradehull_client.order_placement(
-                        tradingsymbol=symbol,
-                        exchange=exch,
-                        quantity=trade_target.total_quantity,
-                        price=0,
-                        trigger_price=0,
-                        order_type="MARKET",
-                        transaction_type=action_str,
-                        product_type="INTRADAY"
-                    )
-                    logger.info(f"[{self.track_label}] Live DhanHQ Order Executed: {resp}")
-                    order_id = f"DHAN_{resp}"
-                except Exception as e:
-                    logger.error(f"[{self.track_label}] Live order placement error: {e}")
-                    order_id = f"DHAN_ERR_{self.order_counter}"
-            else:
-                logger.error(f"[{self.track_label}] Live trading mode active but Tradehull client is None! Order not dispatched.")
-                order_id = f"NO_CLIENT_{self.order_counter}"
+            broker_id = self._place_live_order(symbol, trade_target.total_quantity, action_str)
+            if broker_id is None:
+                self.notify(f"ENTRY FAILED: {action_str} {trade_target.total_quantity} {symbol} was not placed/accepted. No position recorded.")
+                return None
+            order_id = f"DHAN_{broker_id}"
 
         receipt = OrderReceipt(
             order_id=order_id,
@@ -262,40 +281,20 @@ class OrderExecutionRouter:
             f"[{self.track_label}] EXIT FILL: {pos_symbol} | "
             f"Fresh LTP=₹{fresh_exit_price:.2f} | Slippage=₹{slippage:.2f} | Fill=₹{fill_price:.2f}"
         )
-        realized_pnl = self.risk_manager.record_trade_close(fill_price)
-        pnl_pct = round(((fill_price - pos_entry_price) / pos_entry_price) * 100, 2) if pos_entry_price > 0 else 0.0
-
         order_id = f"V2_PAPER_EXIT_{self.order_counter}"
         self.order_counter += 1
 
-        # Live DhanHQ Exit Dispatch
+        # Live DhanHQ Exit Dispatch FIRST: the book is closed only after the broker accepts the exit
         if not self.is_paper:
-            if self.tradehull_client is not None:
-                try:
-                    exch = self.market_cfg.exchange_segment
-                    if "NIFTY" in pos_symbol or "BANKNIFTY" in pos_symbol:
-                        exch = "NSE_FNO"
-                    elif "SENSEX" in pos_symbol:
-                        exch = "BSE_FNO"
+            broker_id = self._place_live_order(pos_symbol, pos_qty, "SELL")
+            if broker_id is None:
+                logger.critical(f"[{self.track_label}] EXIT NOT PLACED for {pos_symbol} ({reason}). Position remains OPEN; will retry on next tick. CHECK THE BROKER TERMINAL.")
+                self.notify(f"EXIT FAILED for {pos_symbol} ({reason}). Position still open at broker; retrying. Check Dhan terminal now.")
+                return None
+            order_id = f"DHAN_EXIT_{broker_id}"
 
-                    exit_resp = self.tradehull_client.order_placement(
-                        tradingsymbol=pos_symbol,
-                        exchange=exch,
-                        quantity=pos_qty,
-                        price=0,
-                        trigger_price=0,
-                        order_type="MARKET",
-                        transaction_type="SELL",
-                        product_type="INTRADAY"
-                    )
-                    logger.info(f"[{self.track_label}] Live DhanHQ Exit Order Executed: {exit_resp}")
-                    order_id = f"DHAN_EXIT_{exit_resp}"
-                except Exception as e:
-                    logger.error(f"[{self.track_label}] Live exit order placement error: {e}")
-                    order_id = f"DHAN_EXIT_ERR_{self.order_counter}"
-            else:
-                logger.error(f"[{self.track_label}] Live exit requested but Tradehull client is None!")
-                order_id = f"NO_CLIENT_EXIT_{self.order_counter}"
+        realized_pnl = self.risk_manager.record_trade_close(fill_price)
+        pnl_pct = round(((fill_price - pos_entry_price) / pos_entry_price) * 100, 2) if pos_entry_price > 0 else 0.0
 
         receipt = OrderReceipt(
             order_id=order_id,
@@ -352,6 +351,8 @@ class OrderExecutionRouter:
             log_dir = Path(__file__).resolve().parent / "data"
             log_dir.mkdir(parents=True, exist_ok=True)
             trade_csv = log_dir / "trades_history.csv"
+            if not getattr(self.config, "persist_state", True):
+                return receipt
             trade_record = {
                 "exit_timestamp": str(receipt.timestamp),
                 "entry_time": str(pos_entry_time),

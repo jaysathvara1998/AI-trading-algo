@@ -98,6 +98,7 @@ class MarketConfig:
     target_delta: float = 0.72                      # Pro Trader Scalper Delta Sweet-Spot (~0.70 - 0.76)
     lot_size: int = 65                              # 65 for Nifty, 20 for Sensex
     step_size: int = 50                             # 50 for Nifty, 100 for Sensex
+    point_scale: float = 1.0                        # point thresholds are NIFTY-scaled; SENSEX ~3.3x, BANKNIFTY ~2.2x
     
     # Market Trading Hours (IST: 09:15 to 15:30)
     market_open_hour: int = 9
@@ -118,6 +119,7 @@ class MarketConfig:
         """Switches underlying between NIFTY and SENSEX"""
         self.underlying = symbol_name.upper()
         self.symbol = self.underlying
+        self.point_scale = 3.3 if self.underlying == "SENSEX" else (2.2 if "BANK" in self.underlying else 1.0)
         if "NATGAS" in self.underlying or "NATURAL" in self.underlying:
             self.exchange_segment = "MCX_COMM"
             self.instrument_type = "OPTFUT"
@@ -222,6 +224,8 @@ class EnsembleConfig:
     xgb_max_depth: int = 4
     xgb_learning_rate: float = 0.05
     xgb_min_prob_threshold: float = 0.72     # Strict high-conviction >=72% probability threshold to filter noise
+    enable_ml_vetoes: bool = False           # SVM/XGB/ANN vetoes OFF: 3-year backtests show they reduce gross P&L
+    enable_autonomous_skill_generation: bool = False  # never hot-load LLM-generated code into the veto chain
     
     # Retraining & History
     retrain_interval: int = 15
@@ -251,8 +255,8 @@ class RiskConfig:
     max_capital_per_trade: float = 40000.0
     max_daily_loss_inr: float = 2500.0       # 5% Max Daily Drawdown Kill-Switch (if enabled)
     daily_target_profit_inr: float = 5000.0  # Daily Profit Goal Target Lock
-    max_daily_trades: int = 10               # Dynamic Daily Trades Limit (Expanded for Expiry Days)
-    enable_kill_switch: bool = False         # False = Disabled for continuous trade monitoring
+    max_daily_trades: int = 4                # Daily trade cap (backtests: costs dominate above ~4/day)
+    enable_kill_switch: bool = True          # Daily-loss kill switch ON (max_daily_loss_inr)
     max_open_positions: int = 1
     max_lots: int = 1
     base_lots: int = 1
@@ -304,6 +308,7 @@ class AppConfig:
     scalper: ScalperConfig = field(default_factory=ScalperConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     gemini: GeminiConfig = field(default_factory=GeminiConfig)
+    persist_state: bool = True   # False in simulation: never write trades, models, bar logs or tuner state
 
 
 CONFIG = AppConfig()

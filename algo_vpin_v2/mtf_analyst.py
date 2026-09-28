@@ -30,7 +30,8 @@ class MultiTimeframeAnalyst:
     Detects cumulative multi-bar counter-trends, V-shape reversals, and enforces
     strict 5-minute Higher Timeframe (HTF) candle alignment before trade entries.
     """
-    def __init__(self, max_window: int = 30):
+    def __init__(self, max_window: int = 30, market_cfg=None):
+        self.market_cfg = market_cfg
         self.price_history: deque = deque(maxlen=max_window)
         self.current_state: Optional[MTFMomentumState] = None
         self.current_5m_open: float = 0.0
@@ -39,7 +40,12 @@ class MultiTimeframeAnalyst:
         self.last_5m_bucket: int = -1
         self.prev_5m_closed_color: str = "NEUTRAL" # "GREEN", "RED", "NEUTRAL"
 
+    @property
+    def scale(self) -> float:
+        return float(getattr(self.market_cfg, "point_scale", 1.0) or 1.0) if self.market_cfg is not None else 1.0
+
     def update_bar(self, spot_price: float, timestamp=None) -> MTFMomentumState:
+        s = self.scale
         """Ingests new 1-minute closed candle close price and updates rolling state & 5m candle"""
         spot = float(spot_price)
         self.price_history.append(spot)
@@ -56,9 +62,9 @@ class MultiTimeframeAnalyst:
         pct_change_5m = (delta_5m / p_5m) if p_5m > 0 else 0.0
 
         # Rolling 5-min trend bias threshold (+/- 10 points)
-        if delta_5m >= 10.0:
+        if delta_5m >= 10.0 * s:
             bias = 1
-        elif delta_5m <= -10.0:
+        elif delta_5m <= -10.0 * s:
             bias = -1
         else:
             bias = 0
@@ -110,6 +116,7 @@ class MultiTimeframeAnalyst:
         Blocks PUT buying when 5-min candle or 5-min rolling momentum is GREEN / Bullish.
         """
         action_up = action.strip().upper()
+        s = self.scale
         if self.current_state is None or self.current_5m_open <= 0:
             return True, "HTF_WARMING_UP"
 
@@ -120,11 +127,11 @@ class MultiTimeframeAnalyst:
         # --- CALL / BUY VALIDATION ---
         if action_up in ("BUY", "CALL", "CE"):
             # Check 1: 5-minute current candle is RED (allow 6.0 pt normal noise wick)
-            if is_5m_red and (self.current_5m_open - current_spot) >= 6.0:
+            if is_5m_red and (self.current_5m_open - current_spot) >= 6.0 * s:
                 return False, f"5M_HTF_MISALIGNMENT: 5-Min candle is RED (Spot {current_spot:.2f} < 5M Open {self.current_5m_open:.2f})"
 
             # Check 2: 5-minute rolling momentum is actively falling
-            if st.delta_5m <= -8.0:
+            if st.delta_5m <= -8.0 * s:
                 return False, f"5M_HTF_MISALIGNMENT: 5-Min rolling delta is falling ({st.delta_5m:+.1f} pts)"
 
             # Check 3: 5-minute rolling bias is bearish
@@ -132,17 +139,17 @@ class MultiTimeframeAnalyst:
                 return False, "5M_HTF_MISALIGNMENT: 5-Min rolling bias is BEARISH"
 
             # Check 4: Anti-Chasing / Vertical Climax Exhaustion Filter
-            if st.delta_5m >= 30.0 and st.delta_1m > 3.0:
+            if st.delta_5m >= 30.0 * s and st.delta_1m > 3.0 * s:
                 return False, f"5M_HTF_EXHAUSTION: Spot already surged +{st.delta_5m:.1f} pts in 5m — wait for pullback to avoid climax buying"
 
         # --- PUT / SELL VALIDATION ---
         elif action_up in ("SELL", "PUT", "PE"):
             # Check 1: 5-minute current candle is GREEN (allow 6.0 pt normal noise wick)
-            if is_5m_green and (current_spot - self.current_5m_open) >= 6.0:
+            if is_5m_green and (current_spot - self.current_5m_open) >= 6.0 * s:
                 return False, f"5M_HTF_MISALIGNMENT: 5-Min candle is GREEN (Spot {current_spot:.2f} > 5M Open {self.current_5m_open:.2f})"
 
             # Check 2: 5-minute rolling momentum is actively surging
-            if st.delta_5m >= 8.0:
+            if st.delta_5m >= 8.0 * s:
                 return False, f"5M_HTF_MISALIGNMENT: 5-Min rolling delta is surging ({st.delta_5m:+.1f} pts)"
 
             # Check 3: 5-minute rolling bias is bullish
@@ -150,7 +157,7 @@ class MultiTimeframeAnalyst:
                 return False, "5M_HTF_MISALIGNMENT: 5-Min rolling bias is BULLISH"
 
             # Check 4: Anti-Chasing / Vertical Climax Exhaustion Filter
-            if st.delta_5m <= -30.0 and st.delta_1m < -3.0:
+            if st.delta_5m <= -30.0 * s and st.delta_1m < -3.0 * s:
                 return False, f"5M_HTF_EXHAUSTION: Spot already dumped {st.delta_5m:.1f} pts in 5m — wait for pullback to avoid climax buying"
 
         return True, "5M_HTF_ALIGNED"

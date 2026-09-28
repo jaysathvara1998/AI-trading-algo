@@ -58,6 +58,9 @@ class AutoTuningEngine:
         if state is not None:
             self.state = state
         try:
+            from .config import CONFIG as _CFG
+            if not getattr(_CFG, "persist_state", True):
+                return
             with open(self.config_path, "w", encoding="utf-8") as f:
                 json.dump(asdict(self.state), f, indent=2)
             logger.info(f"[AutoTuner] Persisted adaptive settings to {self.config_path}")

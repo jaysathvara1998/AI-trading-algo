@@ -1,5 +1,5 @@
 {
-  "max_daily_trades": 12,
+  "max_daily_trades": 4,
   "xgb_min_prob_threshold": 0.8,
   "post_trade_cooldown_bars": 3,
   "avoid_equilibrium_chop": true,

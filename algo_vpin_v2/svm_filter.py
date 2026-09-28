@@ -91,6 +91,9 @@ class SVMTradeFilter:
             return False
 
     def save_model(self, file_path: Optional[Path] = None):
+        from .config import CONFIG as _CFG
+        if not getattr(_CFG, "persist_state", True):
+            return False
         if not self.is_trained or self.model is None:
             return
         try:
@@ -124,7 +127,7 @@ class SVMTradeFilter:
 
     def predict(self, feature_vector: List[float]) -> Tuple[int, float]:
         if not self.is_trained or self.model is None:
-            return 1, 0.0
+            return 0, 0.0   # neutral when untrained (never a directional default)
         x_arr = np.array([feature_vector], dtype=np.float64)
         try:
             pred = int(self.model.predict(x_arr)[0])

@@ -17,7 +17,7 @@ All commands run from the project root. Credentials are read from `.env` (copy `
 python algo_vpin_v2/main.py --mode live --symbol NIFTY
 python algo_vpin_v2/main.py --mode live --symbol SENSEX
 ```
-Optional flags: `--strategy-mode auto|scalper|swing`, `--no-compare` (disable Track 2 Tri-Brain).
+Optional flags: `--strategy-mode auto|scalper|swing`, `--compare` (enable Track 2 Tri-Brain; OFF by default because it places a second position).
 
 ### Offline Simulation (300 Bars):
 ```powershell
@@ -65,5 +65,5 @@ python -m pytest tests -v
 | **Macro Awareness** | PDH, PDL, Weekly Range, 15m Trend |
 | **Execution Mode** | Options Buying (CE/PE), target delta 0.72 |
 | **Nifty / Sensex Lot** | 65 qty / 20 qty (1 Lot) |
-| **Capital** | ₹50,000 (₹2,500 daily-loss kill switch, off by default) |
+| **Capital** | ₹50,000 (₹2,500 daily-loss kill switch, ON by default; max 4 trades/day) |
 | **Intraday Cutoff** | 15:15 last entry, 15:24 square-off |

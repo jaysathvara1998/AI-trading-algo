@@ -8,7 +8,7 @@ Combines:
 """
 
 from dataclasses import dataclass
-from typing import List, Optional, Tuple, Dict
+from typing import List, Optional, Tuple, Dict, Any
 import logging
 import numpy as np
 
@@ -231,7 +231,7 @@ class EnsembleBrain:
         # Direct Wave-Based M/W & Trendline Skill Check
         if (pattern_st is None or getattr(pattern_st, "bias", "") == "NEUTRAL") and recent_bars and len(recent_bars) >= 8:
             try:
-                wave_res = self.m_pattern_skill.evaluate(recent_bars, current_price=current_price)
+                wave_res = self.m_pattern_skill.evaluate(recent_bars, close_p=close_p)
                 if wave_res.is_favorable and wave_res.signal in ("BUY_CALL", "BUY_PUT"):
                     bias = "BULLISH" if wave_res.signal == "BUY_CALL" else "BEARISH"
                     from .pattern_engine import DetectedPattern, PatternType
@@ -240,9 +240,9 @@ class EnsembleBrain:
                         pattern_type=p_type,
                         bias=bias,
                         confidence=wave_res.confidence,
-                        neckline_level=wave_res.metadata.get("neckline", current_price),
-                        target_price=wave_res.metadata.get("target_1x", current_price),
-                        stop_loss_level=wave_res.metadata.get("stop_loss", current_price),
+                        neckline_level=wave_res.metadata.get("neckline", close_p),
+                        target_price=wave_res.metadata.get("target_1x", close_p),
+                        stop_loss_level=wave_res.metadata.get("stop_loss", close_p),
                         description=wave_res.reason
                     )
             except Exception as e:
@@ -409,26 +409,27 @@ class EnsembleBrain:
         )
         ann_pred, ann_conf, _ = self.ann.predict(ann_vec)
 
+        ml_on = bool(getattr(self.config, "enable_ml_vetoes", False))
         # --- TRACK 1: Standard Dual Consensus (SVM + XGB) ---
         dual_veto = False
         dual_action = effective_signal
         dual_reason = f"APPROVED by Standard Dual-Brain (SVM + XGB){pattern_override_note}"
 
         if effective_signal == DirectionalSignal.BUY:
-            if svm_pred == -1 and not has_chart_pattern:
+            if ml_on and svm_pred == -1 and not has_chart_pattern:
                 dual_veto = True
                 dual_action = DirectionalSignal.HOLD
                 dual_reason = "VETO by SVM: BUY signal but SVM predicted Bearish (-1)"
-            elif xgb_pred == -1 and xgb_conf >= self.config.xgb_min_prob_threshold and not has_chart_pattern:
+            elif ml_on and xgb_pred == -1 and xgb_conf >= self.config.xgb_min_prob_threshold and not has_chart_pattern:
                 dual_veto = True
                 dual_action = DirectionalSignal.HOLD
                 dual_reason = f"VETO by XGBoost: BUY signal but XGBoost confidence is {xgb_conf*100:.1f}% Bearish"
         elif effective_signal == DirectionalSignal.SELL:
-            if svm_pred == 1 and not has_chart_pattern:
+            if ml_on and svm_pred == 1 and not has_chart_pattern:
                 dual_veto = True
                 dual_action = DirectionalSignal.HOLD
                 dual_reason = "VETO by SVM: SELL signal but SVM predicted Bullish (+1)"
-            elif xgb_pred == 1 and xgb_conf >= self.config.xgb_min_prob_threshold and not has_chart_pattern:
+            elif ml_on and xgb_pred == 1 and xgb_conf >= self.config.xgb_min_prob_threshold and not has_chart_pattern:
                 dual_veto = True
                 dual_action = DirectionalSignal.HOLD
                 dual_reason = f"VETO by XGBoost: SELL signal but XGBoost confidence is {xgb_conf*100:.1f}% Bullish"
@@ -439,12 +440,12 @@ class EnsembleBrain:
         tri_reason = f"APPROVED by Tri-Brain Consensus (ANN + XGB + SVM){pattern_override_note}"
 
         if effective_signal == DirectionalSignal.BUY:
-            if dual_veto or (ann_pred == -1 and ann_conf >= 0.55 and not has_chart_pattern):
+            if dual_veto or (ml_on and ann_pred == -1 and ann_conf >= 0.55 and not has_chart_pattern):
                 tri_veto = True
                 tri_action = DirectionalSignal.HOLD
                 tri_reason = f"VETO by Tri-Brain: Opposing Bearish ANN={ann_pred} ({ann_conf*100:.0f}%), DualVeto={dual_veto}"
         elif effective_signal == DirectionalSignal.SELL:
-            if dual_veto or (ann_pred == 1 and ann_conf >= 0.55 and not has_chart_pattern):
+            if dual_veto or (ml_on and ann_pred == 1 and ann_conf >= 0.55 and not has_chart_pattern):
                 tri_veto = True
                 tri_action = DirectionalSignal.HOLD
                 tri_reason = f"VETO by Tri-Brain: Opposing Bullish ANN={ann_pred} ({ann_conf*100:.0f}%), DualVeto={dual_veto}"

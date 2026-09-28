@@ -4,7 +4,7 @@ Data Feed & Real-Time Options Resolution for Algo VPIN v2.0
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Any, Tuple
 import contextlib
 import logging
 import numpy as np
@@ -363,7 +363,36 @@ class DhanDataFeed:
         if hasattr(self, "_last_known_spot") and self._last_known_spot > 0:
             return self._last_known_spot
 
-        return 23800.0 if target_sym == "NIFTY" else 79000.0
+        logger.critical(f"No live spot price available for {target_sym} from any feed. Returning 0 so callers retry instead of trading on a fabricated price.")
+        return 0.0
+
+    def fetch_last_completed_minute_bar(self, now_ist) -> Optional[Tuple[float, float, float, float, float]]:
+        """Returns (open, high, low, close, volume) of the exchange 1-minute bar for the minute that just completed,
+        via Dhan intraday history, or None if unavailable. One API call per minute."""
+        if self.tradehull_client is None or not hasattr(self.tradehull_client, "Dhan"):
+            return None
+        target_sym = self.market_cfg.underlying.upper()
+        sec_id_map = {"NIFTY": "13", "NIFTY 50": "13", "SENSEX": "51", "BANKNIFTY": "25", "FINNIFTY": "27"}
+        sec_id = sec_id_map.get(target_sym)
+        if sec_id is None:
+            return None
+        self._throttle_api_call(0.5)
+        day_str = now_ist.strftime("%Y-%m-%d")
+        res = self.tradehull_client.Dhan.intraday_minute_data(
+            security_id=sec_id, exchange_segment="IDX_I", instrument_type="INDEX", from_date=day_str, to_date=day_str
+        )
+        if not (isinstance(res, dict) and res.get("status") == "success" and res.get("data")):
+            return None
+        data = res["data"]; ts = data.get("timestamp", [])
+        if not ts:
+            return None
+        want = pd.Timestamp(now_ist).floor("min") - pd.Timedelta(minutes=1)
+        stamps = pd.to_datetime(pd.Series(ts), unit="s", utc=True).dt.tz_convert(self.tz)
+        match = stamps[stamps == want]
+        if match.empty:
+            return None
+        i = int(match.index[-1])
+        return (float(data["open"][i]), float(data["high"][i]), float(data["low"][i]), float(data["close"][i]), float(data.get("volume", [0] * len(ts))[i]))
 
     def fetch_option_ltp(self, option_symbol: str, spot_price: float = 23800.0) -> float:
         """
@@ -442,7 +471,12 @@ class DhanDataFeed:
             self._option_time_cache[sym_clean] = now_ts
             return last_real
 
-        # Tier 3: Real Intrinsic + Extrinsic Options Model (ONLY used offline/post-market when no real tick exists)
+        # Never fabricate an option price while a broker session exists (live/paper-live): callers treat 0 as 'no price'.
+        if self.tradehull_client is not None and hasattr(self.tradehull_client, "Dhan"):
+            logger.warning(f"No live LTP for {sym_clean} from any feed; returning 0 (no synthetic pricing while a broker session exists).")
+            return 0.0
+
+        # Tier 3: Real Intrinsic + Extrinsic Options Model (ONLY used offline/simulation when no broker session exists)
         strike_match = re.search(r"(\d{5})", sym_clean)
         if strike_match:
             strike_price = float(strike_match.group(1))

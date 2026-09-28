@@ -88,7 +88,7 @@ class AlgoVPINRunner:
         self.news_filter = NewsFilter()
         self.heavyweight_scanner = HeavyweightScanner(self.data_feed.tradehull_client)
         self.ensemble_brain = EnsembleBrain(self.config.ensemble)
-        self.mtf_analyst = MultiTimeframeAnalyst()
+        self.mtf_analyst = MultiTimeframeAnalyst(market_cfg=self.config.market)
 
         # Autonomous Self-Learning & Trading Skills (marian2js/trading-skills enhanced)
         self.auto_tuner = AutoTuningEngine()
@@ -114,8 +114,9 @@ class AlgoVPINRunner:
         )
 
         # Track 2: Tri-Brain with Deep Neural Network (Side-by-Side Comparison Default: True)
-        self.compare_ann: bool = True
-        self.enable_tri_brain_comparison()
+        self.tri_risk_manager = None
+        self.tri_execution = None
+        self.compare_ann: bool = False   # Track 2 is opt-in (--compare): it places a second real position
         self.total_bars_processed: int = 0
         self.is_warmed_up: bool = False
         self.recent_volumes = deque(maxlen=10)
@@ -290,6 +291,8 @@ class AlgoVPINRunner:
         self.is_warmed_up = True
 
     def _record_bar_to_csv(self, bar: BarOHLCV, vpin_res, garch_res, ensemble_dec, macro_st):
+        if not getattr(self.config, "persist_state", True):
+            return
         try:
             date_str = datetime.now(self.tz).strftime("%Y%m%d")
             data_dir = ROOT_DIR / "algo_vpin_v2" / "data"
@@ -340,18 +343,23 @@ class AlgoVPINRunner:
         is_counter, counter_msg = self.mtf_analyst.check_cumulative_counter_trend(
             holding_call=holding_call,
             holding_put=holding_put,
-            threshold_pts=20.0
+            threshold_pts=20.0 * self.config.market.point_scale
         )
 
-        exit_needed, exit_reason = self.risk_manager.check_exit_conditions(
-            current_price=curr_price,
-            option_premium=curr_opt_premium,
-            current_time=timestamp.to_pydatetime() if hasattr(timestamp, "to_pydatetime") else None,
-            counter_trend_reason=counter_msg if is_counter else None
-        )
+        opt_price_ok = not (pos.side != PositionSide.FLAT and pos.is_option and pos.symbol) or (curr_opt_premium is not None and curr_opt_premium > 0)
+        if pos.side != PositionSide.FLAT and not opt_price_ok:
+            logger.warning(f"[EXIT CHECK SKIPPED] No valid option LTP for {pos.symbol}; exit logic must never run on spot price.")
+            exit_needed, exit_reason = False, ""
+        else:
+            exit_needed, exit_reason = self.risk_manager.check_exit_conditions(
+                current_price=curr_price,
+                option_premium=curr_opt_premium,
+                current_time=timestamp.to_pydatetime() if hasattr(timestamp, "to_pydatetime") else None,
+                counter_trend_reason=counter_msg if is_counter else None
+            )
         if exit_needed:
             exit_exec_price = curr_opt_premium if (pos.is_option and curr_opt_premium) else curr_price
-            self.execution.execute_exit(current_price=exit_exec_price, reason=exit_reason)
+            self._exit_track1(exit_exec_price, exit_reason)
 
         # --- STEP 2: Macro Levels & Microstructure & Smart Money Concepts (SMC) & 4 Pillars ---
         macro_st = self.macro_engine.update_1min_bar(curr_price, high_price, low_price)
@@ -492,7 +500,7 @@ class AlgoVPINRunner:
         self._record_bar_to_csv(bar, vpin_res, garch_res, ensemble_dec, macro_st)
 
         # Check Emergency Signal Reversal on Track 1 open position
-        if pos.side != PositionSide.FLAT:
+        if pos.side != PositionSide.FLAT and opt_price_ok:
             raw_rev_signal = ensemble_dec.final_action if not ensemble_dec.is_vetoed else garch_res.signal
             rev_exit, rev_reason = self.risk_manager.check_exit_conditions(
                 current_price=curr_price,
@@ -502,7 +510,7 @@ class AlgoVPINRunner:
             )
             if rev_exit:
                 exit_exec_price = curr_opt_premium if (pos.is_option and curr_opt_premium) else curr_price
-                self.execution.execute_exit(current_price=exit_exec_price, reason=rev_reason)
+                self._exit_track1(exit_exec_price, rev_reason)
 
         # Rolling Volume tracking & Available Capital Query
         self.recent_volumes.append(bar.volume)
@@ -534,7 +542,7 @@ class AlgoVPINRunner:
         target_symbol = None
         opt_premium = None
 
-        if is_market_active and not ensemble_dec.is_vetoed and ensemble_dec.final_action in (DirectionalSignal.BUY, DirectionalSignal.SELL):
+        if is_market_active and pos.side == PositionSide.FLAT and not ensemble_dec.is_vetoed and ensemble_dec.final_action in (DirectionalSignal.BUY, DirectionalSignal.SELL):
             action_str = "BUY" if ensemble_dec.final_action == DirectionalSignal.BUY else "SELL"
             
             # --- 5-MINUTE HTF ALIGNMENT CHECK ---
@@ -640,7 +648,7 @@ class AlgoVPINRunner:
                 tri_is_counter, tri_counter_msg = self.mtf_analyst.check_cumulative_counter_trend(
                     holding_call=(tri_pos.is_option and tri_pos.symbol and ("CALL" in tri_pos.symbol or "CE" in tri_pos.symbol)),
                     holding_put=(tri_pos.is_option and tri_pos.symbol and ("PUT" in tri_pos.symbol or "PE" in tri_pos.symbol)),
-                    threshold_pts=20.0
+                    threshold_pts=20.0 * self.config.market.point_scale
                 )
                 tri_exit_needed, tri_exit_reason = self.tri_risk_manager.check_exit_conditions(
                     current_price=curr_price,
@@ -661,11 +669,9 @@ class AlgoVPINRunner:
                 if not tri_htf_ok:
                     logger.warning(f"[HTF VETO] [TRACK 2 TRI-BRAIN] Entry blocked: {tri_htf_reason}")
                 else:
-                    if target_symbol is None:
-                        target_symbol = self.data_feed.resolve_option_strike(tri_action_str, curr_price)
-                    if opt_premium is None and is_option:
-                        opt_premium = self.data_feed.get_ltp(target_symbol, curr_price)
-                    tri_exec_p = opt_premium if is_option else curr_price
+                    tri_symbol = self.data_feed.resolve_option_strike(tri_action_str, curr_price) if is_option else None
+                    tri_premium = self.data_feed.get_ltp(tri_symbol, curr_price) if (is_option and tri_symbol) else None
+                    tri_exec_p = tri_premium if is_option else curr_price
 
                     t2_unanimous = (ensemble_dec.svm_prediction == ensemble_dec.xgb_prediction == ensemble_dec.ann_prediction and ensemble_dec.ann_prediction != 0)
                     tri_targets = self.tri_risk_manager.compute_trade_targets(
@@ -674,22 +680,22 @@ class AlgoVPINRunner:
                         garch_res=garch_res,
                         vpin_res=vpin_res,
                         is_option=is_option,
-                        option_premium=opt_premium,
+                        option_premium=tri_premium,
                         available_cash=avail_capital,
                         strategy_mode=chosen_mode,
                         candle_high=high_price,
                         candle_low=low_price
                     )
-                    if tri_targets and is_option and target_symbol and opt_premium:
-                        if len(self.opt_bars_tracker.get(target_symbol, [])) >= 6:
+                    if tri_targets and is_option and tri_symbol and tri_premium:
+                        if len(self.opt_bars_tracker.get(tri_symbol, [])) >= 6:
                             opt_an = self.ensemble_brain.option_chart_skill.analyze_option_chart(
-                                self.opt_bars_tracker[target_symbol],
-                                symbol=target_symbol,
-                                option_type="CE" if ("CALL" in target_symbol or "CE" in target_symbol) else "PE",
-                                current_premium=opt_premium
+                                self.opt_bars_tracker[tri_symbol],
+                                symbol=tri_symbol,
+                                option_type="CE" if ("CALL" in tri_symbol or "CE" in tri_symbol) else "PE",
+                                current_premium=tri_premium
                             )
                             if opt_an.pattern_detected == "M_BREAKDOWN":
-                                logger.warning(f"[OPTION CHART VETO] [TRACK 2] {target_symbol} is in M-Pattern Breakdown! Entry vetoed.")
+                                logger.warning(f"[OPTION CHART VETO] [TRACK 2] {tri_symbol} is in M-Pattern Breakdown! Entry vetoed.")
                                 tri_targets = None
 
                     if tri_targets:
@@ -706,7 +712,7 @@ class AlgoVPINRunner:
                             logger.warning(f"[PRE-TRADE SANITY VETO] [TRACK 2] {tri_sanity.reason}")
                             tri_targets = None
 
-                    if tri_targets and target_symbol and "ATM_" not in str(target_symbol):
+                    if tri_targets and tri_symbol and "ATM_" not in str(tri_symbol):
                         self.tri_risk_manager.current_position.entry_time = datetime.now(self.tz)
                         self.tri_execution.execute_entry(
                             signal=ensemble_dec.tri_final_action,
@@ -714,10 +720,23 @@ class AlgoVPINRunner:
                             trade_target=tri_targets,
                             vpin_res=vpin_res,
                             order_type=OrderType.MARKET,
-                            target_symbol=target_symbol,
+                            tri_symbol=tri_symbol,
                             is_unanimous=t2_unanimous,
                             volume_ratio=vol_ratio
                         )
+
+    def _exit_track1(self, price: float, reason: str):
+        """Exit the Track 1 position and arm the post-trade cooldown (re-entry lock) the watcher expects."""
+        pos = self.risk_manager.current_position
+        sym, side = pos.symbol, ("CALL" if pos.symbol and ("CALL" in pos.symbol or "CE" in pos.symbol) else "PUT")
+        receipt = self.execution.execute_exit(current_price=price, reason=reason)
+        if receipt is not None:
+            try:
+                bars = int(self.auto_tuner.state.post_trade_cooldown_bars) if hasattr(self.auto_tuner.state, "post_trade_cooldown_bars") else 3
+            except Exception:
+                bars = 3
+            self.pattern_watcher.set_post_trade_cooldown(symbol=sym or "", side=side, bars=max(1, bars), current_bar=self.total_bars_processed)
+        return receipt
 
     def print_comparison_report(self):
         """Prints post-market head-to-head performance comparison between Track 1 and Track 2"""
@@ -754,7 +773,7 @@ class AlgoVPINRunner:
 
                 # Autonomous Skill Generation / Enhancement
                 chop_losses = audit.get("quant_metrics", {}).get("chop_losses", 0)
-                if chop_losses >= 2:
+                if chop_losses >= 2 and getattr(self.config.ensemble, "enable_autonomous_skill_generation", False):
                     logger.info("[SKILL EVOLUTION] Detected multiple chop losses today. Synthesizing Chop Guardian Skill...")
                     ok, msg = self.skill_generator.generate_and_deploy_skill(
                         skill_name="ChopFilterSkill",
@@ -808,6 +827,7 @@ class AlgoVPINRunner:
 
         logger.info(f"[LIVE RUNNER] Starting real-time Dhan polling loop ({self.config.market.underlying})...")
         last_bar_minute = -1
+        poll_o = poll_h = poll_l = None   # intra-minute OHLC built from LTP polls (fallback candle)
 
         try:
             while True:
@@ -842,6 +862,9 @@ class AlgoVPINRunner:
                     logger.warning(f"Failed to fetch live LTP for {self.config.market.symbol}. Retrying...")
                     await asyncio.sleep(3)
                     continue
+                poll_o = curr_spot if poll_o is None else poll_o
+                poll_h = curr_spot if poll_h is None else max(poll_h, curr_spot)
+                poll_l = curr_spot if poll_l is None else min(poll_l, curr_spot)
 
                 # --- FAST GUARDIAN: Check active Track 1 position ---
                 if pos.side != PositionSide.FLAT and pos.symbol:
@@ -849,14 +872,17 @@ class AlgoVPINRunner:
                         curr_opt_ltp = quotes.get(pos.symbol, 0.0)
                         if curr_opt_ltp <= 0:
                             curr_opt_ltp = self.data_feed.get_ltp(pos.symbol, curr_spot)
-                        exit_needed, exit_reason = self.risk_manager.check_exit_conditions(
-                            current_price=curr_spot,
-                            option_premium=curr_opt_ltp,
-                            current_time=now_ist
-                        )
-                        if exit_needed:
-                            logger.info(f"[FAST GUARDIAN EXIT v2] [TRACK 1] Instant trigger: {exit_reason} @ LTP INR {curr_opt_ltp:.2f}")
-                            self.execution.execute_exit(current_price=curr_opt_ltp, reason=exit_reason)
+                        if pos.is_option and curr_opt_ltp <= 0:
+                            logger.warning(f"[FAST GUARDIAN] No valid option LTP for {pos.symbol}; skipping this tick.")
+                        else:
+                            exit_needed, exit_reason = self.risk_manager.check_exit_conditions(
+                                current_price=curr_spot,
+                                option_premium=curr_opt_ltp,
+                                current_time=now_ist
+                            )
+                            if exit_needed:
+                                logger.info(f"[FAST GUARDIAN EXIT v2] [TRACK 1] Instant trigger: {exit_reason} @ LTP INR {curr_opt_ltp:.2f}")
+                                self._exit_track1(curr_opt_ltp, exit_reason)
                     except Exception as e:
                         logger.debug(f"Fast guardian check Track 1: {e}")
 
@@ -899,18 +925,27 @@ class AlgoVPINRunner:
                 if current_minute != last_bar_minute:
                     last_bar_minute = current_minute
                     try:
+                        # Real candle for the minute that just completed: exchange 1-min bar from Dhan when available,
+                        # otherwise the OHLC accumulated from this minute's LTP polls. Never a flat O=H=L=C bar.
+                        completed = None
+                        try:
+                            completed = self.data_feed.fetch_last_completed_minute_bar(now_ist)
+                        except Exception as e:
+                            logger.debug(f"Completed-minute bar fetch: {e}")
+                        if completed is not None:
+                            b_o, b_h, b_l, b_c, b_v = completed
+                        else:
+                            b_o, b_h, b_l, b_c, b_v = (poll_o or curr_spot), max(poll_h or curr_spot, curr_spot), min(poll_l or curr_spot, curr_spot), curr_spot, 0.0
                         bar = BarOHLCV(
                             timestamp=pd.Timestamp(now_ist),
-                            open=curr_spot,
-                            high=curr_spot,
-                            low=curr_spot,
-                            close=curr_spot,
-                            volume=25000.0,
+                            open=float(b_o), high=float(b_h), low=float(b_l), close=float(b_c),
+                            volume=float(b_v) if b_v and b_v > 0 else 25000.0,
                             symbol=self.config.market.symbol
                         )
                         self.process_incoming_bar(bar)
                     except Exception as e:
                         logger.error(f"Error in 1-minute polling cycle: {e}")
+                    poll_o = poll_h = poll_l = curr_spot
 
                 # Sleep interval (8s if in trade, 10s if flat) to strictly respect Dhan API limits
                 in_any_trade = (pos.side != PositionSide.FLAT) or (self.compare_ann and self.tri_risk_manager and self.tri_risk_manager.current_position.side != PositionSide.FLAT)
@@ -930,7 +965,8 @@ def main():
     parser.add_argument("--symbol", choices=["NIFTY", "SENSEX"], default="NIFTY", help="Underlying Index (NIFTY or SENSEX)")
     parser.add_argument("--strategy-mode", choices=["auto", "scalper", "swing"], default="auto", help="Strategy execution mode: auto (Brain selects), scalper (1:1.5 RR + 0.5R Trail), or swing (Multi-target runner)")
     parser.add_argument("--bars", type=int, default=500, help="Number of bars for simulation")
-    parser.add_argument("--no-compare", action="store_true", help="Disable Track 2 comparison (comparison is ON by default)")
+    parser.add_argument("--compare", action="store_true", help="Enable Track 2 Tri-Brain comparison (OFF by default: it places a second position)")
+    parser.add_argument("--no-compare", action="store_true", help="Deprecated: Track 2 is already off by default")
     args = parser.parse_args()
 
     engine = AlgoVPINRunner()
@@ -947,18 +983,22 @@ def main():
         engine.config.risk.execution_mode = ExecutionMode.AUTO_BRAIN_SELECT
         logger.info("[MODE CONFIG] Enabled AI Dynamic Mode (Brain dynamically selects Scalp vs Swing)")
 
-    if args.no_compare:
+    if args.compare and not args.no_compare:
+        engine.enable_tri_brain_comparison()
+        logger.warning("[MODE CONFIG] Track 2 comparison ENABLED: a second position will be taken on every signal.")
+    else:
         engine.compare_ann = False
         engine.tri_risk_manager = None
         engine.tri_execution = None
-        logger.info("[MODE CONFIG] Track 2 comparison disabled.")
-    else:
-        logger.info("[MODE CONFIG] Track 1 & Track 2 Parallel Comparison ACTIVE.")
+        logger.info("[MODE CONFIG] Track 2 comparison disabled (default).")
 
     try:
         if args.mode == "simulation":
             engine.config.telegram.enabled = False
             CONFIG.telegram.enabled = False
+            engine.config.persist_state = False
+            CONFIG.persist_state = False
+            logger.info("[MODE CONFIG] Simulation: state persistence disabled (no trade history, model or bar-log writes).")
             start_price = 24000.0 if engine.config.market.underlying == "NIFTY" else 79000.0
             bars_df = engine.data_feed.generate_synthetic_bars(n_bars=args.bars, start_price=start_price)
             engine.run_simulation(bars_df)
