@@ -52,6 +52,8 @@ from algo_vpin_v2 import risk_manager as rm_mod
 from algo_vpin_v2.risk_manager import RiskManager, PositionSide
 from algo_vpin_v2.ensemble_brain import EnsembleBrain
 from algo_vpin_v2.skills.pre_trade_sanity_skill import PreTradeSanitySkill
+from algo_vpin_v2.skills.pattern_confirmation_watcher import PatternConfirmationWatcher
+import json as _json
 
 # --- hard safety patches: never touch Telegram, disk models, or today's trade history ---
 rm_mod.notify_trailing_sl = lambda *a, **k: None
@@ -75,8 +77,8 @@ def build_brain(ml_on: bool) -> EnsembleBrain:
     return brain
 
 
-def load_sessions(symbol: str):
-    df = pd.read_csv(ROOT / "algo_vpin_v2" / "data" / f"{symbol.lower()}_12m_1min.csv.gz")
+def load_sessions(symbol: str, tag: str = "12m"):
+    df = pd.read_csv(ROOT / "algo_vpin_v2" / "data" / f"{symbol.lower()}_{tag}_1min.csv.gz")
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     df = df.sort_values("timestamp").reset_index(drop=True)
     t = df["timestamp"].dt.time
@@ -89,7 +91,7 @@ def load_sessions(symbol: str):
 
 
 def round_trip_costs(buy_value: float, sell_value: float, brokerage_per_order: float = 20.0) -> float:
-    stt = 0.001 * sell_value                       # 0.1% STT on option sell premium
+    stt = 0.0015 * sell_value                      # 0.15% STT on option sell premium (since Apr 2026)
     txn = 0.00035 * (buy_value + sell_value)       # exchange transaction charges (approx.)
     sebi = 0.000001 * (buy_value + sell_value)
     stamp = 0.00003 * buy_value
@@ -98,9 +100,21 @@ def round_trip_costs(buy_value: float, sell_value: float, brokerage_per_order: f
 
 
 class Replay:
-    def __init__(self, symbol, mode, ml_on, premium_pct, delta, theta_per_min_pct, warm_days, verbose):
+    def __init__(self, symbol, mode, ml_on, premium_pct, delta, theta_per_min_pct, warm_days, verbose, legacy=False):
         self.symbol = symbol.upper()
+        self.legacy = legacy
         CONFIG.market.set_symbol(self.symbol)
+        if legacy:   # emulate the engine BEFORE the 28 Sep 2026 fixes
+            CONFIG.ensemble.enable_ml_vetoes = True
+            CONFIG.risk.enable_kill_switch = False
+            _orig_load = _json.load
+            def _legacy_load(f, *a, **k):
+                d = _orig_load(f, *a, **k)
+                if isinstance(d, dict) and "max_daily_trades" in d: d["max_daily_trades"] = 12
+                return d
+            _json.load = _legacy_load
+            import json as _j; _j.load = _legacy_load
+        self._watcher = None; self._bar_no = 0
         self.mode = TradeStrategyMode.SCALPER if mode == "scalper" else TradeStrategyMode.INSTITUTIONAL_SWING
         self.ml_on = ml_on
         self.premium_pct = premium_pct
@@ -165,6 +179,8 @@ class Replay:
             "hold_min": round((ts - pos_ctx["entry_ts"]).total_seconds() / 60.0, 1),
             "reason": reason.split(" (")[0].split(":")[0], "reason_full": reason, "stage": tag,
         })
+        if not self.legacy and self._watcher is not None:
+            self._watcher.set_post_trade_cooldown(symbol=pos_ctx.get("sym", ""), side="CALL" if pos_ctx["dir"] > 0 else "PUT", bars=3, current_bar=self._bar_no)
         pos_ctx.clear()
         return True
 
@@ -175,7 +191,8 @@ class Replay:
         self.macro.initialize_from_history(hist_df)
         if len(hist_df) >= 375:
             self.vpin.update_bucket_volume(float(hist_df["volume"].sum()) / (len(hist_df) / 375.0))
-        mtf = MultiTimeframeAnalyst()
+        mtf = MultiTimeframeAnalyst() if self.legacy else MultiTimeframeAnalyst(market_cfg=CONFIG.market)
+        self._watcher = PatternConfirmationWatcher(); self._bar_no = 0
         pattern = PatternRecognitionEngine()
         rm = RiskManager(CONFIG.risk, CONFIG.market, CONFIG.scalper, track_name="Track 1: Dual-Brain")
         recent = deque(maxlen=30)
@@ -192,10 +209,11 @@ class Replay:
             ts, o, h, l, c, v = row.timestamp, float(row.open), float(row.high), float(row.low), float(row.close), float(row.volume)
 
             # STEP 1: MTF update + exits on open position (adverse extreme -> favourable extreme -> close)
+            self._bar_no += 1
             mtf.update_bar(c, timestamp=ts)
             if rm.current_position.side != PositionSide.FLAT:
                 is_call = pos_ctx["dir"] > 0
-                is_counter, counter_msg = mtf.check_cumulative_counter_trend(holding_call=is_call, holding_put=not is_call, threshold_pts=20.0)
+                is_counter, counter_msg = mtf.check_cumulative_counter_trend(holding_call=is_call, holding_put=not is_call, threshold_pts=20.0 * (1.0 if self.legacy else CONFIG.market.point_scale))
                 adverse, favourable = (l, h) if is_call else (h, l)
                 if not self.try_exit(rm, pos_ctx, adverse, ts, counter=counter_msg if is_counter else None, tag="adverse"):
                     if not self.try_exit(rm, pos_ctx, favourable, ts, tag="favourable"):
@@ -236,7 +254,7 @@ class Replay:
                 continue
 
             # STEP 4: entry
-            active = (m_open <= ts <= m_cut)
+            active = (m_open <= ts <= m_cut) and (self.legacy or not self._watcher.is_in_cooldown(self._bar_no))
             if not (active and not dec.is_vetoed and dec.final_action in (DirectionalSignal.BUY, DirectionalSignal.SELL)):
                 continue
             if rm.current_position.side != PositionSide.FLAT:
@@ -354,7 +372,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbol", default="NIFTY", choices=["NIFTY", "SENSEX"])
     ap.add_argument("--mode", default="scalper", choices=["scalper", "swing"])
-    ap.add_argument("--ml", default="on", choices=["on", "off"], help="on = SVM/XGB online-trained vetoes as in production; off = rules only")
+    ap.add_argument("--ml", default="on", choices=["on", "off"], help="on = SVM/XGB trained online (vetoes apply only if config/legacy enables them); off = no ML at all (unanimity assumed)")
+    ap.add_argument("--data", default="12m", help="12m (bundled) or 3y (Dhan download)")
+    ap.add_argument("--legacy", action="store_true", help="emulate the engine before the 28 Sep 2026 fixes (ML vetoes, cap 12, no kill switch, no cooldown, unscaled thresholds)")
     ap.add_argument("--premium-pct", type=float, default=0.007, help="entry premium as fraction of spot (ITM weekly ~0.72 delta)")
     ap.add_argument("--delta", type=float, default=0.72)
     ap.add_argument("--theta-pct", type=float, default=0.00025, help="premium decay per minute as fraction of entry premium (~9%% per session)")
@@ -364,8 +384,8 @@ def main():
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args()
 
-    sessions = load_sessions(a.symbol)
-    rp = Replay(a.symbol, a.mode, a.ml == "on", a.premium_pct, a.delta, a.theta_pct, a.warm_days, not a.quiet)
+    sessions = load_sessions(a.symbol, a.data)
+    rp = Replay(a.symbol, a.mode, a.ml == "on", a.premium_pct, a.delta, a.theta_pct, a.warm_days, not a.quiet, legacy=a.legacy)
     rp.run(sessions, max_days=a.days)
     s = rp.summary()
     if a.out:
