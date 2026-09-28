@@ -11,6 +11,14 @@ python kite_login.py
 It prints the Kite login URL; log in, copy the `request_token` from the redirect URL, paste it, and the daily
 token is saved to `Dependencies/kite_token_<date>.txt`. Set `BROKER=dhan` in `.env` to use the old Dhan path.
 
+**Telegram alerts** (entries, exits, trailing stops, end-of-day report): set `TELEGRAM_BOT_TOKEN` and
+`TELEGRAM_CHAT_ID` in `.env` (see `telegram_test.py` docstring for how to get them), then verify once with:
+
+```powershell
+python telegram_test.py
+```
+
+
 ---
 
 ## 1. Live / Simulation Engine (`algo_vpin_v2`)
