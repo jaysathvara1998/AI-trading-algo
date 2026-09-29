@@ -9,7 +9,7 @@ DATA_TAG = "12m"   # override with PA_DATA_TAG=3y to use the Dhan 3-year downloa
 
 def load(sym, tag=None):
     tag = tag or __import__("os").environ.get("PA_DATA_TAG", DATA_TAG)
-    df = pd.read_csv(f"{ROOT}/algo_vpin_v2/data/{sym}_{tag}_1min.csv.gz")
+    df = pd.read_csv(f"{ROOT}/data/{sym}_{tag}_1min.csv.gz")
     df["timestamp"] = pd.to_datetime(df["timestamp"]); df = df.sort_values("timestamp")
     t = df.timestamp.dt.time
     df = df[(t >= pd.Timestamp("09:15").time()) & (t < pd.Timestamp("15:30").time())].copy()
