@@ -53,6 +53,7 @@ from algo_vpin_v2.risk_manager import RiskManager, PositionSide
 from algo_vpin_v2.ensemble_brain import EnsembleBrain
 from algo_vpin_v2.skills.pre_trade_sanity_skill import PreTradeSanitySkill
 from algo_vpin_v2.skills.pattern_confirmation_watcher import PatternConfirmationWatcher
+from algo_vpin_v2.directional import confirm_close, aggregate, is_candle_close
 import json as _json
 
 # --- hard safety patches: never touch Telegram, disk models, or today's trade history ---
@@ -115,7 +116,9 @@ class Replay:
             _json.load = _legacy_load
             import json as _j; _j.load = _legacy_load
         self._watcher = None; self._bar_no = 0
-        self.mode = TradeStrategyMode.SCALPER if mode == "scalper" else TradeStrategyMode.INSTITUTIONAL_SWING
+        self.mode = {"scalper": TradeStrategyMode.SCALPER, "swing": TradeStrategyMode.INSTITUTIONAL_SWING, "directional": TradeStrategyMode.DIRECTIONAL}[mode]
+        if self.mode == TradeStrategyMode.DIRECTIONAL:
+            CONFIG.market.last_entry_hour = CONFIG.directional.last_entry_hour; CONFIG.market.last_entry_minute = CONFIG.directional.last_entry_minute
         self.ml_on = ml_on
         self.premium_pct = premium_pct
         self.delta = delta
@@ -155,6 +158,8 @@ class Replay:
             return False
         if "DISASTER" in reason and pos.hard_disaster_sl > 0:
             fill_ref = min(prem, pos.hard_disaster_sl) if prem < pos.hard_disaster_sl else pos.hard_disaster_sl
+        elif "TIME_STOP" in reason:
+            fill_ref = prem
         elif "STOP" in reason or "TRAILING" in reason:
             fill_ref = pos.stop_loss if prem <= pos.stop_loss else prem
         elif "TAKE_PROFIT" in reason:
@@ -195,7 +200,7 @@ class Replay:
         self._watcher = PatternConfirmationWatcher(); self._bar_no = 0
         pattern = PatternRecognitionEngine()
         rm = RiskManager(CONFIG.risk, CONFIG.market, CONFIG.scalper, track_name="Track 1: Dual-Brain")
-        recent = deque(maxlen=30)
+        recent = deque(maxlen=90)
         for _, r in hist_df.tail(30).iterrows():
             recent.append({"open": r.open, "high": r.high, "low": r.low, "close": r.close, "volume": r.volume})
         pos_ctx = {}
@@ -260,6 +265,13 @@ class Replay:
             if rm.current_position.side != PositionSide.FLAT:
                 continue
             action = "BUY" if dec.final_action == DirectionalSignal.BUY else "SELL"
+            if self.mode == TradeStrategyMode.DIRECTIONAL:
+                _tf = int(CONFIG.directional.candle_tf_min)
+                if not is_candle_close(i, _tf):
+                    continue
+                cok, _ = confirm_close(aggregate(list(recent), _tf), 1 if action == "BUY" else -1, CONFIG.directional.confirm_body_frac)
+                if not cok:
+                    continue
             ok, _ = mtf.validate_htf_entry_alignment(action, c)
             if not ok:
                 continue
@@ -267,7 +279,7 @@ class Replay:
             targets = rm.compute_trade_targets(
                 signal=dec.final_action, current_price=c, garch_res=garch_res, vpin_res=vpin_res, is_option=True,
                 option_premium=p0, available_cash=CONFIG.risk.capital_allocation, strategy_mode=self.mode,
-                candle_high=h, candle_low=l,
+                candle_high=h, candle_low=l, delta=self.delta, recent_bars=list(recent),
             )
             if not targets:
                 continue
@@ -303,6 +315,8 @@ class Replay:
             pos.spot_stop_loss = targets.spot_stop_loss
             pos.hard_disaster_sl = targets.hard_disaster_sl
             pos.is_runner_active = False
+            pos.spot_take_profit = getattr(targets, "spot_take_profit", 0.0)
+            pos.time_stop_min = getattr(targets, "time_stop_min", 0)
             pos_ctx.update({"entry_ts": ts, "entry_spot": c, "p0": fill, "dir": direction,
                             "theta": p0 * self.theta_pct, "mode": targets.strategy_mode.value})
 
@@ -371,9 +385,11 @@ class Replay:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--symbol", default="NIFTY", choices=["NIFTY", "SENSEX"])
-    ap.add_argument("--mode", default="scalper", choices=["scalper", "swing"])
+    ap.add_argument("--mode", default="scalper", choices=["scalper", "swing", "directional"])
     ap.add_argument("--ml", default="on", choices=["on", "off"], help="on = SVM/XGB trained online (vetoes apply only if config/legacy enables them); off = no ML at all (unanimity assumed)")
     ap.add_argument("--data", default="12m", help="12m (bundled) or 3y (Dhan download)")
+    ap.add_argument("--tf", type=int, default=None, help="directional candle timeframe in minutes (overrides config)")
+    ap.add_argument("--lookback", type=int, default=None, help="directional structure-stop lookback candles (overrides config)")
     ap.add_argument("--legacy", action="store_true", help="emulate the engine before the 28 Sep 2026 fixes (ML vetoes, cap 12, no kill switch, no cooldown, unscaled thresholds)")
     ap.add_argument("--premium-pct", type=float, default=0.007, help="entry premium as fraction of spot (ITM weekly ~0.72 delta)")
     ap.add_argument("--delta", type=float, default=0.72)
@@ -384,6 +400,8 @@ def main():
     ap.add_argument("--quiet", action="store_true")
     a = ap.parse_args()
 
+    if a.tf: CONFIG.directional.candle_tf_min = a.tf
+    if a.lookback: CONFIG.directional.sl_lookback_candles = a.lookback
     sessions = load_sessions(a.symbol, a.data)
     rp = Replay(a.symbol, a.mode, a.ml == "on", a.premium_pct, a.delta, a.theta_pct, a.warm_days, not a.quiet, legacy=a.legacy)
     rp.run(sessions, max_days=a.days)

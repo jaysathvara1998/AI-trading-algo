@@ -56,6 +56,7 @@ from algo_vpin_v2.news_filter import NewsFilter, NewsEventState
 from algo_vpin_v2.heavyweight_scanner import HeavyweightScanner, HeavyweightBreadthState
 from algo_vpin_v2.pattern_engine import PatternRecognitionEngine, DetectedPattern
 from algo_vpin_v2.shadow_learner import VirtualShadowLearner
+from algo_vpin_v2.directional import confirm_close, aggregate, is_candle_close
 
 
 class FlushStreamHandler(logging.StreamHandler):
@@ -125,7 +126,7 @@ class AlgoVPINRunner:
         self.total_bars_processed: int = 0
         self.is_warmed_up: bool = False
         self.recent_volumes = deque(maxlen=10)
-        self.recent_bars_deque = deque(maxlen=30)
+        self.recent_bars_deque = deque(maxlen=90)   # 90 min: enough for 5-min structure + 60-min sigma window
         self.opt_bars_tracker: dict = {}
 
     def enable_tri_brain_comparison(self):
@@ -549,12 +550,26 @@ class AlgoVPINRunner:
 
         if is_market_active and pos.side == PositionSide.FLAT and not ensemble_dec.is_vetoed and ensemble_dec.final_action in (DirectionalSignal.BUY, DirectionalSignal.SELL):
             action_str = "BUY" if ensemble_dec.final_action == DirectionalSignal.BUY else "SELL"
-            
+
+            # --- 1-MINUTE CANDLE-CLOSE CONFIRMATION (directional mode) ---
+            if chosen_mode == TradeStrategyMode.DIRECTIONAL:
+                _tf = int(self.config.directional.candle_tf_min)
+                _min_idx = (bar_dt.hour - 9) * 60 + bar_dt.minute - 15
+                if not is_candle_close(_min_idx, _tf):
+                    confirm_ok, confirm_msg = False, f"waiting for the {_tf}-min candle close"
+                else:
+                    confirm_ok, confirm_msg = confirm_close(aggregate(list(self.recent_bars_deque), _tf), 1 if action_str == "BUY" else -1, self.config.directional.confirm_body_frac)
+            else:
+                confirm_ok, confirm_msg = True, ""
             # --- 5-MINUTE HTF ALIGNMENT CHECK ---
             htf_ok, htf_reason = self.mtf_analyst.validate_htf_entry_alignment(action_str, curr_price)
-            if not htf_ok:
+            if not confirm_ok:
+                logger.info(f"[NO CONFIRMATION] {action_str} not taken: {confirm_msg}")
+            elif not htf_ok:
                 logger.warning(f"[HTF VETO] [TRACK 1 DUAL] Entry blocked: {htf_reason}")
             else:
+                if confirm_msg:
+                    logger.info(f"[CONFIRMED] {action_str}: {confirm_msg}")
                 if is_option:
                     target_symbol = self.data_feed.resolve_option_strike(action_str, curr_price)
                     opt_premium = self.data_feed.get_ltp(target_symbol, curr_price)
@@ -574,7 +589,9 @@ class AlgoVPINRunner:
                     available_cash=avail_capital,
                     strategy_mode=chosen_mode,
                     candle_high=high_price,
-                    candle_low=low_price
+                    candle_low=low_price,
+                    delta=getattr(self.data_feed, "last_delta", None),
+                    recent_bars=list(self.recent_bars_deque)
                 )
 
 
@@ -968,7 +985,7 @@ def main():
     parser = argparse.ArgumentParser(description="Algo VPIN v2.0 Multi-Timeframe Quantitative Options Engine")
     parser.add_argument("--mode", choices=["live", "simulation"], default="live", help="Run mode: live or simulation (default: live)")
     parser.add_argument("--symbol", choices=["NIFTY", "SENSEX"], default="NIFTY", help="Underlying Index (NIFTY or SENSEX)")
-    parser.add_argument("--strategy-mode", choices=["auto", "scalper", "swing"], default="auto", help="Strategy execution mode: auto (Brain selects), scalper (1:1.5 RR + 0.5R Trail), or swing (Multi-target runner)")
+    parser.add_argument("--strategy-mode", choices=["directional", "auto", "scalper", "swing"], default="directional", help="directional (default: 1-min close confirmation, structure SL, sigma TP), auto, scalper, or swing")
     parser.add_argument("--bars", type=int, default=500, help="Number of bars for simulation")
     parser.add_argument("--compare", action="store_true", help="Enable Track 2 Tri-Brain comparison (OFF by default: it places a second position)")
     parser.add_argument("--no-compare", action="store_true", help="Deprecated: Track 2 is already off by default")
@@ -978,7 +995,12 @@ def main():
     if args.symbol:
         engine.config.market.set_symbol(args.symbol)
 
-    if args.strategy_mode == "scalper":
+    if args.strategy_mode == "directional":
+        engine.config.risk.execution_mode = ExecutionMode.DIRECTIONAL_ONLY
+        engine.config.market.last_entry_hour = engine.config.directional.last_entry_hour
+        engine.config.market.last_entry_minute = engine.config.directional.last_entry_minute
+        logger.info("[MODE CONFIG] DIRECTIONAL mode: 1-min close confirmation, structure stop, standard-deviation target, last entry 14:30")
+    elif args.strategy_mode == "scalper":
         engine.config.risk.execution_mode = ExecutionMode.SCALPER_ONLY
         logger.info("[MODE CONFIG] Enforced Pure SCALPER Mode (1:1.5 RR + 0.5R Step Trailing)")
     elif args.strategy_mode == "swing":

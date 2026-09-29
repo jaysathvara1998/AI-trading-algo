@@ -14,6 +14,7 @@ from .config import RiskConfig, MarketConfig, ScalperConfig, TradeStrategyMode
 from .garch_engine import DirectionalSignal, GARCHForecastResult
 from .vpin import VPINResult, ToxicityRegime
 from .telegram_notifier import notify_trailing_sl
+from .directional import structure_stop, sigma_target, option_levels
 
 logger = logging.getLogger("algo_vpin_v2.risk_manager")
 
@@ -37,6 +38,9 @@ class TradeTarget:
     entry_spot_price: float = 0.0
     spot_stop_loss: float = 0.0
     hard_disaster_sl: float = 0.0
+    spot_take_profit: float = 0.0
+    time_stop_min: int = 0
+    sigma_move_pts: float = 0.0
 
 
 @dataclass
@@ -61,6 +65,8 @@ class ActivePosition:
     spot_stop_loss: float = 0.0
     hard_disaster_sl: float = 0.0
     is_runner_active: bool = False
+    spot_take_profit: float = 0.0
+    time_stop_min: int = 0
 
 
 
@@ -273,7 +279,8 @@ class RiskManager:
         strategy_mode: Optional[TradeStrategyMode] = None,
         candle_high: Optional[float] = None,
         candle_low: Optional[float] = None,
-        delta: Optional[float] = None
+        delta: Optional[float] = None,
+        recent_bars: Optional[list] = None
     ) -> Optional[TradeTarget]:
         if signal == DirectionalSignal.HOLD or current_price <= 0:
             return None
@@ -285,6 +292,9 @@ class RiskManager:
 
         total_qty = lots * self.market_config.lot_size
         mode = strategy_mode or TradeStrategyMode.INSTITUTIONAL_SWING
+
+        if mode == TradeStrategyMode.DIRECTIONAL:
+            return self._directional_targets(signal, current_price, is_option, option_premium, delta, recent_bars, lots, total_qty)
 
         if is_option:
             premium = option_premium if option_premium and option_premium > 0 else max(10.0, current_price * garch_res.sigma_next * 0.4)
@@ -390,6 +400,50 @@ class RiskManager:
             initial_risk_pts=round(risk_dist, 2)
         )
 
+    def _directional_targets(self, signal, current_price, is_option, option_premium, delta, recent_bars, lots, total_qty) -> Optional[TradeTarget]:
+        """Structure stop (last N candles' low/high) and standard-deviation target; skip trades that fail risk or R:R limits."""
+        from .config import CONFIG as _CFG
+        dc = _CFG.directional
+        direction = 1 if signal == DirectionalSignal.BUY else -1
+        if not recent_bars or len(recent_bars) < max(dc.sl_lookback_candles, 12):
+            logger.info("[DIRECTIONAL] Not enough candles for structure stop / sigma target; skipping.")
+            return None
+        from .directional import aggregate
+        tf_bars = aggregate(recent_bars, int(getattr(dc, "candle_tf_min", 1)))
+        spot_sl = structure_stop(tf_bars, direction, dc.sl_lookback_candles, dc.sl_buffer_atr)
+        closes = [b["close"] for b in recent_bars]
+        spot_tp, move = sigma_target(current_price, direction, closes, dc.sigma_window_min, dc.horizon_min, dc.tp_sigma_mult)
+        spot_risk = abs(current_price - spot_sl)
+        if spot_risk <= 0 or move <= 0:
+            logger.info("[DIRECTIONAL] Degenerate stop or zero volatility; skipping.")
+            return None
+        eff_delta = float(delta) if delta and 0.2 <= delta <= 1.0 else 0.72
+        if is_option:
+            premium = option_premium if option_premium and option_premium > 0 else 0.0
+            if premium <= 0:
+                logger.info("[DIRECTIONAL] No option premium; skipping.")
+                return None
+            sl, tp, sl_pts, tp_pts = option_levels(premium, current_price, spot_sl, spot_tp, direction, eff_delta)
+            if sl_pts > dc.max_risk_premium_pct * premium:
+                logger.info(f"[DIRECTIONAL] Structure stop risks {sl_pts:.1f} pts = {sl_pts / premium:.0%} of premium (> {dc.max_risk_premium_pct:.0%}); skipping.")
+                return None
+            rr = tp_pts / sl_pts if sl_pts > 0 else 0.0
+            if rr < dc.min_rr:
+                logger.info(f"[DIRECTIONAL] R:R {rr:.2f} below {dc.min_rr}; sigma move {move:.1f} pts vs structure risk {spot_risk:.1f} pts; skipping.")
+                return None
+            disaster = max(1.0, round(premium * (1.0 - dc.max_risk_premium_pct), 2))
+            logger.info(f"[DIRECTIONAL] {signal.value}: spot {current_price:.2f} | stop {spot_sl:.2f} (structure, {spot_risk:.1f} pts) | target {spot_tp:.2f} (1-sigma {move:.1f} pts x {dc.tp_sigma_mult}) | delta {eff_delta:.2f} | option SL {sl:.2f} TP {tp:.2f} R:R {rr:.2f}")
+            return TradeTarget(entry_price=round(premium, 2), stop_loss=round(sl, 2), take_profit=round(tp, 2), quantity_lots=lots, total_quantity=total_qty,
+                               risk_reward_ratio=round(rr, 2), strategy_mode=TradeStrategyMode.DIRECTIONAL, initial_risk_pts=round(sl_pts, 2),
+                               entry_spot_price=round(current_price, 2), spot_stop_loss=round(spot_sl, 2), hard_disaster_sl=disaster,
+                               spot_take_profit=round(spot_tp, 2), time_stop_min=dc.time_stop_min, sigma_move_pts=round(move, 2))
+        rr = abs(spot_tp - current_price) / spot_risk
+        if rr < dc.min_rr:
+            return None
+        return TradeTarget(entry_price=round(current_price, 2), stop_loss=round(spot_sl, 2), take_profit=round(spot_tp, 2), quantity_lots=lots, total_quantity=total_qty,
+                           risk_reward_ratio=round(rr, 2), strategy_mode=TradeStrategyMode.DIRECTIONAL, initial_risk_pts=round(spot_risk, 2),
+                           entry_spot_price=round(current_price, 2), spot_stop_loss=round(spot_sl, 2), spot_take_profit=round(spot_tp, 2), time_stop_min=dc.time_stop_min, sigma_move_pts=round(move, 2))
+
     def validate_new_entry(
         self,
         signal: DirectionalSignal,
@@ -458,6 +512,29 @@ class RiskManager:
 
         pos.highest_price = max(pos.highest_price, eval_price)
         pos.lowest_price = min(pos.lowest_price if pos.lowest_price > 0 else eval_price, eval_price)
+
+        # ---- DIRECTIONAL mode: spot-structure stop, sigma target, breakeven after 1R, time stop. No scalper trailing,
+        #      no counter-trend or signal-reversal exits: the structure stop is the invalidation.
+        if pos.strategy_mode == TradeStrategyMode.DIRECTIONAL and pos.entry_spot_price > 0 and pos.spot_stop_loss > 0:
+            d = 1 if (pos.symbol and ("CALL" in pos.symbol or "CE" in pos.symbol)) or pos.side == PositionSide.LONG else -1
+            spot_gain = (current_price - pos.entry_spot_price) * d
+            risk = abs(pos.entry_spot_price - pos.spot_stop_loss)
+            if pos.is_option and pos.hard_disaster_sl > 0 and eval_price <= pos.hard_disaster_sl:
+                return True, f"DISASTER_STOP_LOSS (Premium INR {eval_price:.2f} <= floor INR {pos.hard_disaster_sl:.2f})"
+            if (current_price <= pos.spot_stop_loss) if d > 0 else (current_price >= pos.spot_stop_loss):
+                return True, f"STRUCTURE_STOP_HIT (Spot {current_price:.2f} beyond stop {pos.spot_stop_loss:.2f})"
+            if pos.spot_take_profit > 0 and ((current_price >= pos.spot_take_profit) if d > 0 else (current_price <= pos.spot_take_profit)):
+                return True, f"SIGMA_TAKE_PROFIT_HIT (Spot {current_price:.2f} reached target {pos.spot_take_profit:.2f})"
+            if risk > 0 and not pos.is_runner_active and spot_gain >= risk:
+                pos.is_runner_active = True                       # reused as the breakeven-armed flag
+                pos.spot_stop_loss = round(pos.entry_spot_price + d * 0.1 * risk, 2)
+                if pos.is_option:
+                    pos.stop_loss = max(pos.stop_loss, round(pos.entry_price + 1.5, 2))
+                logger.info(f"[DIRECTIONAL] +1R reached; spot stop moved to breakeven {pos.spot_stop_loss:.2f}")
+            mins = (now_ist - pos.entry_time).total_seconds() / 60.0 if pos.entry_time else 0.0
+            if pos.time_stop_min > 0 and mins >= pos.time_stop_min and (risk <= 0 or spot_gain < 0.5 * risk):
+                return True, f"TIME_STOP ({mins:.0f} min held, gain {spot_gain:+.1f} pts < 0.5R)"
+            return False, ""
 
         # 1. Multi-Bar Cumulative Counter-Trend Guard (3m / 5m rolling move against trade)
         if counter_trend_reason:

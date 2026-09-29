@@ -141,6 +141,8 @@ class HumanoidTraderAgent:
             return TradeStrategyMode.SCALPER, "Enforced: Pure Scalper Mode (1:1.5 RR + 0.5R Trail)"
         if configured_mode == ExecutionMode.SWING_ONLY:
             return TradeStrategyMode.INSTITUTIONAL_SWING, "Enforced: Institutional Swing Runner"
+        if configured_mode == ExecutionMode.DIRECTIONAL_ONLY:
+            return TradeStrategyMode.DIRECTIONAL, "Directional: 1-min close confirmation, structure stop, sigma target"
 
         # AI Dynamic Assessment
         is_unanimous = getattr(ensemble_dec, 'is_unanimous', False) or (getattr(ensemble_dec, 'xgb_confidence', 0.5) >= 0.80)

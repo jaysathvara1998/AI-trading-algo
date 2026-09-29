@@ -83,11 +83,13 @@ class ExecutionMode(Enum):
     AUTO_BRAIN_SELECT = "AUTO_BRAIN_SELECT"  # AI Brain dynamically chooses Swing vs Scalper
     SCALPER_ONLY = "SCALPER_ONLY"            # Strictly Sahil Scalper (1:1.5 RR + 0.5R Trail)
     SWING_ONLY = "SWING_ONLY"                # Institutional Trend Runner
+    DIRECTIONAL_ONLY = "DIRECTIONAL_ONLY"    # 1-min close confirmation, structure SL, sigma TP (no scalping)
 
 
 class TradeStrategyMode(Enum):
     SCALPER = "SCALPER"                      # 1:1.5 Initial R:R + 0.5R Step Trailing
     INSTITUTIONAL_SWING = "INSTITUTIONAL_SWING"  # Open-ended 20-40 pt Runner
+    DIRECTIONAL = "DIRECTIONAL"              # Structure stop + standard-deviation target, held to target/stop/time
 
 
 
@@ -240,6 +242,24 @@ class EnsembleConfig:
 
 
 @dataclass
+class DirectionalConfig:
+    """Directional mode: entry confirmed on a closed 1-min candle, stop from structure, target from volatility."""
+    candle_tf_min: int = 5              # candle timeframe (minutes) for confirmation and structure stop; 1 = raw 1-min
+    confirm_body_frac: float = 0.5      # signal candle body must be >= 50% of its range
+    sl_lookback_candles: int = 3        # stop under the lowest low / over the highest high of the last N candles
+    sl_buffer_atr: float = 0.1          # buffer beyond that level, as a fraction of the median 1-min range
+    sigma_window_min: int = 60          # realized-vol lookback (1-min log returns)
+    horizon_min: int = 60               # intended hold horizon for the expected move
+    tp_sigma_mult: float = 1.0          # target = entry +/- mult x 1-sigma expected move over the horizon
+    min_rr: float = 1.5                 # skip if target/stop (in premium points) is below this
+    max_risk_premium_pct: float = 0.30  # skip if the structure stop risks more than this share of the premium
+    time_stop_min: int = 90             # exit if not >= 0.5R in profit after this many minutes
+    breakeven_r: float = 1.0            # move the spot stop to entry (+0.1R) after this many R of spot gain
+    last_entry_hour: int = 14
+    last_entry_minute: int = 30
+
+
+@dataclass
 class ScalperConfig:
     """Mr Star Sahil Scalping Masterclass Configuration (1:1.5 RR + 0.5R Step Trailing)"""
     initial_risk_reward: float = 1.5           # 1:1.5 Initial Risk-Reward Ratio
@@ -256,7 +276,7 @@ class ScalperConfig:
 @dataclass
 class RiskConfig:
     """Institutional Risk Limits Calibrated for ₹50,000 Capital"""
-    execution_mode: ExecutionMode = ExecutionMode.AUTO_BRAIN_SELECT
+    execution_mode: ExecutionMode = ExecutionMode.DIRECTIONAL_ONLY
     capital_allocation: float = 50000.0
     max_capital_per_trade: float = 40000.0
     max_daily_loss_inr: float = 2500.0       # 5% Max Daily Drawdown Kill-Switch (if enabled)
@@ -321,6 +341,7 @@ class AppConfig:
     ensemble: EnsembleConfig = field(default_factory=EnsembleConfig)
     risk: RiskConfig = field(default_factory=RiskConfig)
     scalper: ScalperConfig = field(default_factory=ScalperConfig)
+    directional: DirectionalConfig = field(default_factory=DirectionalConfig)
     telegram: TelegramConfig = field(default_factory=TelegramConfig)
     gemini: GeminiConfig = field(default_factory=GeminiConfig)
     persist_state: bool = True   # False in simulation: never write trades, models, bar logs or tuner state

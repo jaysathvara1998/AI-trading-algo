@@ -139,6 +139,7 @@ class KiteDataFeed(DhanDataFeed):
         self.broker: Optional[KiteBroker] = None
         self.kite = None
         self.authenticated = False
+        self.last_delta: Optional[float] = None
         self._inst_cache: Dict[str, pd.DataFrame] = {}
         self._inst_cache_day: Optional[date] = None
         self._ltp_cache: Dict[str, float] = {}
@@ -306,14 +307,17 @@ class KiteDataFeed(DhanDataFeed):
             t_years = max((exp_dt - now).total_seconds(), 1800.0) / (365.0 * 24 * 3600)
             target = float(getattr(self.market_cfg, "target_delta", 0.72))
             best, best_gap = None, 9.9
+            deltas = {}
             atm_p = prem.get(atm, 0.0)
             sigma = _implied_vol(atm_p, spot, atm, t_years, opt_type == "CE") if atm_p > 0 else 0.14
             for s, p in prem.items():
                 _, _, nd1 = _bs_call_put(spot, s, t_years, sigma)
                 delta = nd1 if opt_type == "CE" else (1.0 - nd1)
+                deltas[s] = delta
                 if abs(delta - target) < best_gap:
                     best, best_gap = s, abs(delta - target)
             chosen = best if best is not None else (atm + itm_dir * step)
+            self.last_delta = deltas.get(chosen, target)
             sym = syms.get(chosen) or syms.get(atm)
             logger.info(f"[Kite] Strike {chosen:.0f} {opt_type} (expiry {expiry}, IV {sigma:.1%}, delta gap {best_gap:.2f}) -> {sym}")
             return sym or f"{info['name']}_ATM_{opt_type}"

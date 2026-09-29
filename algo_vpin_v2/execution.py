@@ -195,10 +195,14 @@ class OrderExecutionRouter:
         self.risk_manager.current_position.entry_spot_price = getattr(trade_target, 'entry_spot_price', 0.0)
         self.risk_manager.current_position.spot_stop_loss = getattr(trade_target, 'spot_stop_loss', 0.0)
         self.risk_manager.current_position.hard_disaster_sl = getattr(trade_target, 'hard_disaster_sl', 0.0)
+        self.risk_manager.current_position.spot_take_profit = getattr(trade_target, 'spot_take_profit', 0.0)
+        self.risk_manager.current_position.time_stop_min = getattr(trade_target, 'time_stop_min', 0)
+        self.risk_manager.current_position.is_runner_active = False
 
         self.order_book.append(receipt)
         total_cost = fill_price * trade_target.total_quantity
-        mode_label = "SCALPER [1:1.5 R:R | 0.5R Trail]" if getattr(trade_target, 'strategy_mode', None) and trade_target.strategy_mode.value == "SCALPER" else "INSTITUTIONAL SWING RUNNER"
+        _m = getattr(trade_target, 'strategy_mode', None)
+        mode_label = "SCALPER [1:1.5 R:R | 0.5R Trail]" if _m and _m.value == "SCALPER" else ("DIRECTIONAL [structure SL | sigma TP]" if _m and _m.value == "DIRECTIONAL" else "INSTITUTIONAL SWING RUNNER")
         spot_sl_str = f" | Spot SL: {trade_target.spot_stop_loss:.2f}" if getattr(trade_target, 'spot_stop_loss', 0.0) > 0 else ""
 
         # Clean, Universal ASCII Trade Entry Banner
