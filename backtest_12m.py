@@ -54,6 +54,7 @@ from algo_vpin_v2.ensemble_brain import EnsembleBrain
 from algo_vpin_v2.skills.pre_trade_sanity_skill import PreTradeSanitySkill
 from algo_vpin_v2.skills.pattern_confirmation_watcher import PatternConfirmationWatcher
 from algo_vpin_v2.directional import confirm_close, aggregate, is_candle_close
+from algo_vpin_v2.pullback_signal import signal as pullback_signal
 import json as _json
 
 # --- hard safety patches: never touch Telegram, disk models, or today's trade history ---
@@ -101,9 +102,10 @@ def round_trip_costs(buy_value: float, sell_value: float, brokerage_per_order: f
 
 
 class Replay:
-    def __init__(self, symbol, mode, ml_on, premium_pct, delta, theta_per_min_pct, warm_days, verbose, legacy=False):
+    def __init__(self, symbol, mode, ml_on, premium_pct, delta, theta_per_min_pct, warm_days, verbose, legacy=False, signal_src="engine"):
         self.symbol = symbol.upper()
         self.legacy = legacy
+        self.signal_src = signal_src
         CONFIG.market.set_symbol(self.symbol)
         if legacy:   # emulate the engine BEFORE the 28 Sep 2026 fixes
             CONFIG.ensemble.enable_ml_vetoes = True
@@ -260,24 +262,31 @@ class Replay:
 
             # STEP 4: entry
             active = (m_open <= ts <= m_cut) and (self.legacy or not self._watcher.is_in_cooldown(self._bar_no))
-            if not (active and not dec.is_vetoed and dec.final_action in (DirectionalSignal.BUY, DirectionalSignal.SELL)):
-                continue
+            if self.signal_src == "pullback":
+                pd_dir, pb_level, _ = pullback_signal(day_df.open.values, day_df.high.values, day_df.low.values, day_df.close.values, i)
+                if not active or pd_dir == 0:
+                    continue
+                final_action = DirectionalSignal.BUY if pd_dir > 0 else DirectionalSignal.SELL
+            else:
+                if not (active and not dec.is_vetoed and dec.final_action in (DirectionalSignal.BUY, DirectionalSignal.SELL)):
+                    continue
+                final_action = dec.final_action
             if rm.current_position.side != PositionSide.FLAT:
                 continue
-            action = "BUY" if dec.final_action == DirectionalSignal.BUY else "SELL"
-            if self.mode == TradeStrategyMode.DIRECTIONAL:
+            action = "BUY" if final_action == DirectionalSignal.BUY else "SELL"
+            if self.mode == TradeStrategyMode.DIRECTIONAL and self.signal_src != "pullback":
                 _tf = int(CONFIG.directional.candle_tf_min)
                 if not is_candle_close(i, _tf):
                     continue
                 cok, _ = confirm_close(aggregate(list(recent), _tf), 1 if action == "BUY" else -1, CONFIG.directional.confirm_body_frac)
                 if not cok:
                     continue
-            ok, _ = mtf.validate_htf_entry_alignment(action, c)
+            ok, _ = (True, "") if self.signal_src == "pullback" else mtf.validate_htf_entry_alignment(action, c)
             if not ok:
                 continue
             p0 = round(c * self.premium_pct, 2)
             targets = rm.compute_trade_targets(
-                signal=dec.final_action, current_price=c, garch_res=garch_res, vpin_res=vpin_res, is_option=True,
+                signal=final_action, current_price=c, garch_res=garch_res, vpin_res=vpin_res, is_option=True,
                 option_premium=p0, available_cash=CONFIG.risk.capital_allocation, strategy_mode=self.mode,
                 candle_high=h, candle_low=l, delta=self.delta, recent_bars=list(recent),
             )
@@ -288,7 +297,7 @@ class Replay:
             if not san.is_favorable:
                 continue
             unanimous = True if not self.ml_on else (dec.svm_prediction == dec.xgb_prediction and dec.xgb_prediction != 0)
-            approved, _ = rm.validate_new_entry(signal=dec.final_action, vpin_res=vpin_res, current_time=ts.to_pydatetime(),
+            approved, _ = rm.validate_new_entry(signal=final_action, vpin_res=vpin_res, current_time=ts.to_pydatetime(),
                                                 is_unanimous=unanimous, volume_ratio=1.0)
             if not approved:
                 continue
@@ -388,6 +397,7 @@ def main():
     ap.add_argument("--mode", default="scalper", choices=["scalper", "swing", "directional"])
     ap.add_argument("--ml", default="on", choices=["on", "off"], help="on = SVM/XGB trained online (vetoes apply only if config/legacy enables them); off = no ML at all (unanimity assumed)")
     ap.add_argument("--data", default="12m", help="12m (bundled) or 3y (Dhan download)")
+    ap.add_argument("--signal", default="engine", choices=["engine", "pullback"], help="entry direction source: engine (momentum/pattern) or pullback (15-min trend + pullback + 5-min confirmation)")
     ap.add_argument("--tf", type=int, default=None, help="directional candle timeframe in minutes (overrides config)")
     ap.add_argument("--lookback", type=int, default=None, help="directional structure-stop lookback candles (overrides config)")
     ap.add_argument("--legacy", action="store_true", help="emulate the engine before the 28 Sep 2026 fixes (ML vetoes, cap 12, no kill switch, no cooldown, unscaled thresholds)")
@@ -403,7 +413,7 @@ def main():
     if a.tf: CONFIG.directional.candle_tf_min = a.tf
     if a.lookback: CONFIG.directional.sl_lookback_candles = a.lookback
     sessions = load_sessions(a.symbol, a.data)
-    rp = Replay(a.symbol, a.mode, a.ml == "on", a.premium_pct, a.delta, a.theta_pct, a.warm_days, not a.quiet, legacy=a.legacy)
+    rp = Replay(a.symbol, a.mode, a.ml == "on", a.premium_pct, a.delta, a.theta_pct, a.warm_days, not a.quiet, legacy=a.legacy, signal_src=a.signal)
     rp.run(sessions, max_days=a.days)
     s = rp.summary()
     if a.out:
