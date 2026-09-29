@@ -70,6 +70,7 @@ class ConfirmationConfig:
     micro_bos_lookback: int = 5         # execution-tf swing lookback for a micro-BOS
     max_bars: int = 10                  # execution candles to wait for confirmation after retest / shift
     require_momentum: bool = True
+    mode: str = "momentum"              # "momentum": 1m rejection / micro-BOS after the retest; "retest_close": enter at the setup candle that retested
 
 
 @dataclass

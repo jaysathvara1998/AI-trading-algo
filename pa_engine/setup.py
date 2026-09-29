@@ -42,6 +42,7 @@ class SetupTracker:
         self.cfg = cfg; self.log = log; self.tf = tf_setup
         self.active: List[Setup] = []
         self.done: List[Setup] = []
+        self.ctx = {"regime": "", "trend_ctx": "", "trend_setup": ""}     # updated by the engine for logging
 
     def new_sweep(self, sw: SweepEvent, setup_idx: int, setup_candles: Sequence[Candle], ts):
         if any(s.id == sw.sweep_id for s in self.active):
@@ -54,8 +55,8 @@ class SetupTracker:
             s.state = "WAITING_FOR_RETEST" if self.cfg.retest.enabled else "WAITING_CONFIRMATION"
             s.wait_exec_from = (setup_idx + 1) * self.tf
         self.active.append(s)
-        self.log.log(ts, "LIQUIDITY_EVENT", setup=s.id, direction=sw.direction, level=sw.level.name, price=sw.level.price,
-                     penetration_atr=sw.penetration_atr, close_location=sw.close_location, wick_ratio=sw.wick_ratio, bars_beyond=sw.bars_beyond)
+        self.log.log(ts, "LIQUIDITY_EVENT", setup=s.id, direction=sw.direction, level=sw.level.name, source=sw.level.source, price=sw.level.price,
+                     penetration_atr=sw.penetration_atr, close_location=sw.close_location, wick_ratio=sw.wick_ratio, bars_beyond=sw.bars_beyond, **self.ctx)
 
     # ---------------- setup-timeframe close ----------------
     def on_setup_close(self, setup_idx: int, c_setup: Sequence[Candle], events: Sequence[StructureEvent], atr_value: float, ts):
@@ -85,10 +86,12 @@ class SetupTracker:
                 elif touched:
                     s.retest_seen = True; s.retest_idx = setup_idx; s.state = "WAITING_CONFIRMATION"
                     s.wait_exec_from = (setup_idx + 1) * self.tf
-                    self.log.log(ts, "RETEST", setup=s.id, level=lvl, close=cur.close)
+                    self.log.log(ts, "RETEST", setup=s.id, direction=s.direction, level=lvl, close=cur.close, source=s.sweep.level.source, **self.ctx)
+                    if self.cfg.confirm.mode == "retest_close":
+                        s.state = "ENTRY_CONFIRMED"; s.confirm_minute = (setup_idx + 1) * self.tf - 1; s.confirm_candle = cur; s.confirm_kind = "retest_close"
                 elif since > self.cfg.retest.expire_bars:
                     self._expire(s, f"no retest within {self.cfg.retest.expire_bars} setup candles", ts)
-            elif s.state == "WAITING_CONFIRMATION":
+            elif s.state == "WAITING_CONFIRMATION" and self.cfg.confirm.mode != "retest_close":
                 # still valid only while structure holds
                 if (cur.close > s.invalidation) if s.direction < 0 else (cur.close < s.invalidation):
                     self._expire(s, "price accepted beyond the swept level while waiting for confirmation", ts)

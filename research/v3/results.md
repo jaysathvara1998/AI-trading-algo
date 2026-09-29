@@ -176,3 +176,125 @@ curve fitting, and the matrix already shows no direction to tune toward.
   (events.jsonl is generated locally with `--events` and is gitignored: 12 MB each).
 - `research/v3/matrix_nifty/matrix.csv`, `research/v3/matrix_sensex/matrix.csv`.
 - Reproduce: see `COMMANDS.md`.
+
+---
+
+# Root-cause review (29 Sep 2026, second pass)
+
+Question asked: why does the engine lose on 3 years of data, and can it be fixed. Method: measure the
+directional information at every stage of the setup chain, independent of the exit rules, and test the
+remaining structural alternatives (entry timing, timeframes, exit style, risk filter) in raw underlying
+points with no rupee cap, so that the only thing measured is whether price moves the right way.
+Scripts: `research/v3/diagnose.py`, `research/v3/stage_groups.py`, `research/v3/variants.py`.
+
+## 1. Where the information is, stage by stage (NIFTY, all 740 sessions)
+
+Forward move of NIFTY in the setup's direction after each stage event, exits ignored:
+
+| Stage | Events | 15 min | 30 min | t (30m) | 60 min | t (60m) |
+|---|---|---|---|---|---|---|
+| Liquidity sweep | 25,734 | +0.25 | +0.09 | 0.4 | +0.37 | 1.1 |
+| Structure shift | 7,087 | -0.37 | -0.02 | 0.0 | +1.05 | 1.6 |
+| Retest | 5,056 | +0.73 | +1.85 | 3.3 | +2.35 | 3.1 |
+| 1-minute confirmation (entry) | 298 | +0.58 | -1.65 | -1.0 | -1.94 | -0.8 |
+
+- The sweep and the structure shift carry no directional information at all.
+- The retest is the only stage with a measurable drift, and it is tiny: about 2 points over 30 minutes,
+  or 0.07 of a 3-minute ATR. One round trip in a 0.72-delta weekly option costs about 2.5 points
+  equivalent (charges plus spread plus theta), so even this stage is below cost.
+- The 1-minute momentum confirmation removes the drift. Entering after a strong 1-minute candle means
+  buying the top of a micro-impulse, and at the 1-minute scale the index mean-reverts.
+
+## 2. The entries are a coin flip
+
+For the 189 NIFTY entries, with the engine's exits ignored and the structural stop kept:
+
+| Target | Reached before the stop | Random walk |
+|---|---|---|
+| 0.5R | 69% | 67% |
+| 1R | 52% | 50% |
+| 1.5R | 37% | 40% |
+| 2R | 24% | 33% |
+| 3R | 13% | 25% |
+
+Flipping the direction of the same entries gives 42% at 1R and 22% at 2R. Neither direction has an
+edge, so this is not a case of the signal being inverted. The exits are not the problem either: trades
+that were stopped had a median favourable excursion of about 1R afterwards, which is what a random path
+with a 1R stop looks like. 55% of entries touch -1R within 60 minutes.
+
+## 3. The apparent pockets are one year, not a pattern
+
+Splitting the retest-stage drift by year:
+
+| | 2023 (Q4) | 2024 | 2025 | 2026 |
+|---|---|---|---|---|
+| NIFTY, 30-min drift after retest | +1.5 (t 1.5) | +1.9 (t 2.2) | -2.4 (t -2.8) | +7.5 (t 5.0) |
+| SENSEX, 30-min drift after retest | +0.6 (t 0.2) | +5.6 (t 1.9) | -8.2 (t -3.1) | +4.2 (t 1.1) |
+
+Every subgroup that looked strong in the full-sample cut (counter-trend retests, retests aligned with the
+3-minute trend, retests in a bull regime) is positive only in 2026 and flat or negative in 2024 and 2025.
+2026 has been a trending, high-range year; the setup is riding that, not predicting it. Selecting those
+subgroups would be fitting one year.
+
+## 4. Structural alternatives, measured in raw points (NIFTY, no costs, no rupee cap)
+
+| Variant | Trades | Net points x 65 | dev | val | oos |
+|---|---|---|---|---|---|
+| Baseline 5m/3m, momentum entry | 297 | -21,211 | +5,310 | -29,842 | +3,321 |
+| Enter at the retest close (no 1m confirmation) | 441 | +19,259 | -6,209 | -1,548 | +27,016 |
+| 15m context / 5m setup | 164 | +31,559 | +25,110 | +614 | +5,835 |
+| 15m/5m, retest-close entry | 211 | -18,430 | +21,507 | -4,705 | -35,232 |
+| 30m/15m | 35 | +2,332 | +7,177 | -9,409 | +4,563 |
+| Hold to target or stop only, 5m/3m | 272 | -14,087 | +355 | -21,348 | +6,905 |
+| Hold only, 15m/5m | 159 | +12,130 | +15,426 | +158 | -3,454 |
+| No R:R or stop-width filter | 967 | -80,175 | -43,656 | -48,023 | +11,503 |
+
+### SENSEX, same variants (raw points x 20, no costs, no rupee cap)
+
+| Variant | Trades | Net | dev | val | oos |
+|---|---|---|---|---|---|
+| Baseline 5m/3m, momentum entry | 287 | 11,234 | 27,896 | -25,463 | 8,801 |
+| Enter at the retest close (no 1m confirmation) | 415 | -23,157 | 22,513 | -39,485 | -6,185 |
+| 15m context / 5m setup | 178 | 7,329 | -5,258 | -1,578 | 14,166 |
+| 15m/5m, retest-close entry | 214 | 10,008 | 11,344 | -19,194 | 17,857 |
+| 30m/5m | 178 | 7,329 | -5,258 | -1,578 | 14,166 |
+| 15m/3m | 288 | 10,183 | 27,896 | -25,463 | 7,749 |
+| 30m/15m | 27 | -30,937 | -16,845 | -9,829 | -4,263 |
+| 30m/15m, retest-close entry | 34 | -43,694 | -27,036 | -11,731 | -4,927 |
+| Hold to target or stop only, 5m/3m | 277 | 63,930 | 79,417 | -45,814 | 30,327 |
+| Hold only, 15m/5m | 169 | 10,756 | 11,571 | -7,171 | 6,356 |
+| No R:R or stop-width filter | 939 | 36,800 | 54,120 | -21,517 | 4,196 |
+| No R:R filter, retest-close entry | 1016 | 9,290 | 63,721 | -63,260 | 8,829 |
+
+On SENSEX every variant loses in 2025, and the ones that are positive overall get it from the dev period
+or 2026. The largest number in the table (hold-only, +63,930) is +79,417 in dev, -45,814 in val, +30,327 in oos:
+the sign flips with the year, which is what a zero-edge signal riding the regime looks like.
+
+- The best variant, 15-minute context with 5-minute setups, makes about 3 points per trade in the
+  underlying. With real option costs it loses: NIFTY -Rs 9,275 over 87 trades, SENSEX -Rs 22,918 over 103.
+- Removing the risk filter makes everything much worse, so the stop-width and R:R rules are doing useful
+  work; they are the reason the trade count is low, and loosening them is not a fix.
+- The retest-close entry recovers the small drift the momentum candle was destroying, but the drift is
+  still below cost and comes from 2026.
+
+## 5. Conclusion
+
+The engine implements the specification correctly; the loss is not an implementation bug. The stage-by-
+stage measurement shows that the sweep, the structure shift and the 1-minute confirmation carry no
+directional information on NIFTY or SENSEX at intraday horizons, and the retest carries too little to
+cover option costs and is not stable across years. No combination of the spec's rules tested here has a
+positive expectancy after costs on the validation and out-of-sample periods.
+
+This should not be traded with real money in its current form, and I do not recommend tuning it further
+on this data: with about 70 trades per year the only things that would turn green are one-year artefacts.
+
+If the goal is a live price-action system, the honest routes are:
+
+1. A different source of edge than intraday liquidity sweeps on the index, since three separate studies on
+   this data (the old engine, the earlier price-action setups, and this specification) all land at zero
+   before costs.
+2. Cheaper instruments: even the small retest drift would be roughly break-even in NIFTY futures rather
+   than weekly options, but that needs a much larger account for one lot and the drift is still unstable.
+3. Manual review of the event log against your own chart reading, to find whether the engine is
+   identifying the same sweeps and retests you would. If it is not, the definitions are wrong and the
+   measurement above does not apply to your method; if it is, the method has no intraday edge on this data.

@@ -12,7 +12,7 @@ class EventLog:
         self.rows: List[Dict[str, Any]] = [] if keep else None  # type: ignore
         if self.path:
             self.path.parent.mkdir(parents=True, exist_ok=True)
-            self._fh = open(self.path, "a", encoding="utf-8")
+            self._fh = open(self.path, "w", encoding="utf-8")
         else:
             self._fh = None
 

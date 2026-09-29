@@ -79,7 +79,12 @@ class SessionEngine:
             for sw in detect_sweeps(self.c_setup, self.level_list, self.atr_setup, si, self.cfg.sweep, self.seen_sweeps):
                 self.levels.record_touch(sw.level)
                 self.setups.new_sweep(sw, si, self.c_setup, ts)
+            self.setups.ctx = {"regime": self.regime_now, "trend_ctx": self.trend_ctx, "trend_setup": self.trend_setup}
             self.setups.on_setup_close(si, self.c_setup, self.st_setup.events, self.atr_setup, ts)
+            if self.cfg.confirm.mode == "retest_close" and not (self.position and self.position.open) and not self.halted_reason \
+                    and self.entry_start <= m <= self.entry_end:
+                for s in [x for x in self.setups.active if x.state == "ENTRY_CONFIRMED" and x.confirm_minute == m]:
+                    self._try_enter(s, m, c, dec)
             if self.position and self.position.open:
                 self.position._setup_idx = si
                 choch_against = any(e.idx == si and e.kind == "CHOCH" and e.direction == -self.position.direction for e in self.st_setup.events)
