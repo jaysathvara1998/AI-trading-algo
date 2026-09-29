@@ -1,0 +1,108 @@
+{
+  "symbol": "NIFTY",
+  "tf": {
+    "context": 5,
+    "setup": 3,
+    "execution": 1
+  },
+  "swing": {
+    "left": 2,
+    "right": 2,
+    "min_dist_atr": 0.5,
+    "atr_period": 14
+  },
+  "regime": {
+    "highvol_atr_ratio": 1.8,
+    "fast_atr": 5,
+    "slow_atr": 30,
+    "range_overlap_atr": 0.5
+  },
+  "levels": {
+    "opening_range_min": 15,
+    "equal_tol_atr": 0.15,
+    "recent_swings": 3,
+    "max_touches": 2
+  },
+  "sweep": {
+    "min_penetration_atr": 0.1,
+    "max_penetration_atr": 1.5,
+    "reclaim_bars": 2,
+    "require_wick": false
+  },
+  "structure": {
+    "bos_min_atr": 0.15,
+    "max_bars_after_sweep": 6,
+    "require_shift": true
+  },
+  "retest": {
+    "enabled": true,
+    "zone_atr": 0.25,
+    "expire_bars": 8,
+    "invalidate_atr": 0.35
+  },
+  "confirm": {
+    "body_frac": 0.5,
+    "micro_bos_lookback": 5,
+    "max_bars": 10,
+    "require_momentum": true
+  },
+  "score": {
+    "context_structure": 2,
+    "setup_structure": 2,
+    "sweep": 2,
+    "shift": 2,
+    "retest": 2,
+    "micro_bos": 1,
+    "momentum": 1,
+    "volume": 1,
+    "location": 1,
+    "entry_threshold": 8
+  },
+  "risk": {
+    "buffer_atr": 0.25,
+    "min_stop_atr": 0.5,
+    "max_stop_atr": 3.0,
+    "min_rr": 2.0,
+    "min_target_atr": 1.0,
+    "max_risk_inr": 1500.0,
+    "sizing": "fixed",
+    "base_lots": 1,
+    "max_lots": 3,
+    "lot_size": 65,
+    "daily_loss_limit_inr": 3000.0,
+    "max_consecutive_losses": 2,
+    "max_trades_per_day": 3,
+    "cooldown_bars": 5
+  },
+  "exit": {
+    "tp1_r": 1.0,
+    "tp1_fraction": 0.5,
+    "tp2_r": 2.0,
+    "tp2_fraction": 0.0,
+    "breakeven_after_r": 1.0,
+    "breakeven_buffer_atr": 0.05,
+    "trail": "hybrid",
+    "trail_atr_factor": 1.5,
+    "trail_after_r": 1.0,
+    "time_exit_bars": 20,
+    "time_exit_progress_r": 0.5,
+    "invalidation_exit": true
+  },
+  "session": {
+    "entry_start": "09:30",
+    "entry_end": "14:30",
+    "flatten": "15:15",
+    "skip_expiry_day": true
+  },
+  "cost": {
+    "instrument": "option",
+    "premium_pct": 0.007,
+    "delta": 0.72,
+    "theta_per_min": 0.00025,
+    "spread_pct": 0.002,
+    "brokerage_per_order": 20.0,
+    "stt_sell_pct": 0.0015,
+    "slippage_points": 0.5
+  },
+  "version": "v3.0"
+}

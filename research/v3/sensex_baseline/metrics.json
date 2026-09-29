@@ -1,0 +1,104 @@
+{
+ "all": {
+  "trades": 203,
+  "sessions": 740,
+  "trades_per_day": 0.27,
+  "gross": -37125,
+  "costs": 18513,
+  "net": -55638,
+  "win_rate": 0.389,
+  "avg_win": 779,
+  "avg_loss": -945,
+  "expectancy": -274.1,
+  "profit_factor": 0.53,
+  "max_drawdown": -55573,
+  "recovery_factor": -1.0,
+  "avg_r": -0.083,
+  "t_stat_net": -3.83,
+  "avg_hold_min": 25.7,
+  "daily_sharpe": -4.35,
+  "exit_reasons": {
+   "TRAIL_STOP": 83,
+   "STOP": 76,
+   "STRUCTURE_INVALIDATED": 39,
+   "TIME_EXIT": 5
+  }
+ },
+ "splits": {
+  "dev_2023Q4_2024": {
+   "trades": 81,
+   "sessions": 310,
+   "trades_per_day": 0.26,
+   "gross": -7102,
+   "costs": 7461,
+   "net": -14562,
+   "win_rate": 0.444,
+   "avg_win": 736,
+   "avg_loss": -912,
+   "expectancy": -179.8,
+   "profit_factor": 0.65,
+   "max_drawdown": -13984,
+   "recovery_factor": -1.04,
+   "avg_r": 0.003,
+   "t_stat_net": -1.58,
+   "avg_hold_min": 26.5,
+   "daily_sharpe": -2.82,
+   "exit_reasons": {
+    "TRAIL_STOP": 37,
+    "STOP": 25,
+    "STRUCTURE_INVALIDATED": 18,
+    "TIME_EXIT": 1
+   }
+  },
+  "val_2025": {
+   "trades": 75,
+   "sessions": 248,
+   "trades_per_day": 0.3,
+   "gross": -26660,
+   "costs": 6687,
+   "net": -33347,
+   "win_rate": 0.32,
+   "avg_win": 691,
+   "avg_loss": -979,
+   "expectancy": -444.6,
+   "profit_factor": 0.33,
+   "max_drawdown": -34161,
+   "recovery_factor": -0.98,
+   "avg_r": -0.272,
+   "t_stat_net": -4.34,
+   "avg_hold_min": 27.0,
+   "daily_sharpe": -8.03,
+   "exit_reasons": {
+    "STOP": 33,
+    "TRAIL_STOP": 25,
+    "STRUCTURE_INVALIDATED": 16,
+    "TIME_EXIT": 1
+   }
+  },
+  "oos_2026": {
+   "trades": 47,
+   "sessions": 182,
+   "trades_per_day": 0.26,
+   "gross": -3363,
+   "costs": 4365,
+   "net": -7728,
+   "win_rate": 0.404,
+   "avg_win": 970,
+   "avg_loss": -934,
+   "expectancy": -164.4,
+   "profit_factor": 0.7,
+   "max_drawdown": -11796,
+   "recovery_factor": -0.66,
+   "avg_r": 0.071,
+   "t_stat_net": -0.96,
+   "avg_hold_min": 22.2,
+   "daily_sharpe": -2.29,
+   "exit_reasons": {
+    "TRAIL_STOP": 21,
+    "STOP": 18,
+    "STRUCTURE_INVALIDATED": 5,
+    "TIME_EXIT": 3
+   }
+  }
+ }
+}

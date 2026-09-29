@@ -32,3 +32,9 @@ ref_docs/
 .DS_Store
 .vscode/
 .idea/
+
+# pa_engine runtime state (paper/live logs, trades, state)
+runtime/
+research/v3/**/events.jsonl
+research/v3/matrix_*/*_trades.csv
+research/v3/matrix_*/*_config.json
