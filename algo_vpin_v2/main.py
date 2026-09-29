@@ -57,6 +57,7 @@ from algo_vpin_v2.heavyweight_scanner import HeavyweightScanner, HeavyweightBrea
 from algo_vpin_v2.pattern_engine import PatternRecognitionEngine, DetectedPattern
 from algo_vpin_v2.shadow_learner import VirtualShadowLearner
 from algo_vpin_v2.directional import confirm_close, aggregate, is_candle_close
+from algo_vpin_v2.pullback_signal import signal as pullback_signal
 
 
 class FlushStreamHandler(logging.StreamHandler):
@@ -127,6 +128,8 @@ class AlgoVPINRunner:
         self.is_warmed_up: bool = False
         self.recent_volumes = deque(maxlen=10)
         self.recent_bars_deque = deque(maxlen=90)   # 90 min: enough for 5-min structure + 60-min sigma window
+        self.session_bars = []                       # today's 1-min bars in order (index = minute since 09:15) for the pullback signal
+        self._decision_log_dir = None                # set to override the default data/ location (tests)
         self.opt_bars_tracker: dict = {}
 
     def enable_tri_brain_comparison(self):
@@ -159,6 +162,19 @@ class AlgoVPINRunner:
                     "close": float(r["close"]),
                     "volume": float(r.get("volume", 0.0))
                 })
+
+        # Seed today's session bars (bot may start after 09:15) for the pullback signal
+        try:
+            if not historical_bars.empty and "timestamp" in historical_bars.columns:
+                today = datetime.now(self.tz).date()
+                for _, r in historical_bars.iterrows():
+                    ts_ = pd.Timestamp(r["timestamp"])
+                    if ts_.tzinfo is None: ts_ = ts_.tz_localize(self.tz)
+                    if ts_.tz_convert(self.tz).date() == today:
+                        self._append_session_bar(ts_.tz_convert(self.tz), float(r.get("open", r["close"])), float(r.get("high", r["close"])), float(r.get("low", r["close"])), float(r["close"]))
+                logger.info(f"[SESSION] Seeded {len(self.session_bars)} bars of today's session for structure analysis.")
+        except Exception as e:
+            logger.debug(f"session seed: {e}")
 
         # 1. Initialize Macro Engine
         self.macro_engine.initialize_from_history(historical_bars)
@@ -296,6 +312,41 @@ class AlgoVPINRunner:
 
         self.is_warmed_up = True
 
+    def _append_session_bar(self, ts, o, h, l, c):
+        """Keep today's bars indexed by minute since 09:15; reset on a new date; fill single missing minutes by carry-forward."""
+        d = ts.date(); m = (ts.hour - 9) * 60 + ts.minute - 15
+        if m < 0 or m > 374:
+            return
+        if self.session_bars and self.session_bars[0]["date"] != d:
+            self.session_bars = []
+        while len(self.session_bars) < m:               # gap: carry the last close forward so index == minute
+            last = self.session_bars[-1]["close"] if self.session_bars else c
+            self.session_bars.append({"date": d, "m": len(self.session_bars), "open": last, "high": last, "low": last, "close": last})
+        if len(self.session_bars) == m:
+            self.session_bars.append({"date": d, "m": m, "open": o, "high": h, "low": l, "close": c})
+        else:
+            self.session_bars[m] = {"date": d, "m": m, "open": o, "high": h, "low": l, "close": c}
+
+    def _log_decision(self, ts, event: str, **fields):
+        """Append one row to data/decision_log_<date>.csv for post-session review of every signal, gate and trade."""
+        if not getattr(self.config, "persist_state", True) and self._decision_log_dir is None:
+            return
+        try:
+            import csv
+            from pathlib import Path
+            d = Path(self._decision_log_dir) if self._decision_log_dir else (Path(__file__).resolve().parent / "data")
+            d.mkdir(parents=True, exist_ok=True)
+            p = d / f"decision_log_{ts.strftime('%Y%m%d')}.csv"
+            row = {"time": ts.strftime("%H:%M:%S"), "event": event, "spot": round(float(fields.pop("spot", 0.0) or 0.0), 2)}
+            row.update({k: (round(v, 2) if isinstance(v, float) else v) for k, v in fields.items()})
+            new = not p.exists()
+            with open(p, "a", newline="", encoding="utf-8") as f:
+                w = csv.DictWriter(f, fieldnames=["time", "event", "spot", "direction", "level", "note", "stop", "target", "premium", "symbol", "pnl"], extrasaction="ignore")
+                if new: w.writeheader()
+                w.writerow(row)
+        except Exception as e:
+            logger.debug(f"decision log: {e}")
+
     def _record_bar_to_csv(self, bar: BarOHLCV, vpin_res, garch_res, ensemble_dec, macro_st):
         if not getattr(self.config, "persist_state", True):
             return
@@ -394,6 +445,12 @@ class AlgoVPINRunner:
         )
 
         # Append bar to recent history for Vision CNN
+        try:
+            _ts_ = timestamp.to_pydatetime() if hasattr(timestamp, "to_pydatetime") else datetime.now(self.tz)
+            if _ts_.tzinfo is None: _ts_ = self.tz.localize(_ts_)
+            self._append_session_bar(_ts_.astimezone(self.tz), float(bar.open), float(bar.high), float(bar.low), float(bar.close))
+        except Exception as e:
+            logger.debug(f"session bar: {e}")
         self.recent_bars_deque.append({
             "open": bar.open,
             "high": bar.high,
@@ -548,11 +605,28 @@ class AlgoVPINRunner:
         target_symbol = None
         opt_premium = None
 
-        if is_market_active and pos.side == PositionSide.FLAT and not ensemble_dec.is_vetoed and ensemble_dec.final_action in (DirectionalSignal.BUY, DirectionalSignal.SELL):
-            action_str = "BUY" if ensemble_dec.final_action == DirectionalSignal.BUY else "SELL"
+        # --- ENTRY SOURCE: engine (momentum/pattern) or pullback (15-min trend + pullback + 5-min confirmation) ---
+        entry_action, entry_vetoed, entry_note = ensemble_dec.final_action, ensemble_dec.is_vetoed, ensemble_dec.reason
+        use_pullback = (chosen_mode == TradeStrategyMode.DIRECTIONAL and str(getattr(self.config.directional, "entry_source", "engine")).lower() == "pullback")
+        if use_pullback:
+            entry_action, entry_vetoed, entry_note = DirectionalSignal.HOLD, False, "no session bars"
+            _sb = self.session_bars
+            if _sb:
+                _m = _sb[-1]["m"]
+                if (_m + 1) % 5 == 0:
+                    _o = np.array([b["open"] for b in _sb]); _h = np.array([b["high"] for b in _sb]); _l = np.array([b["low"] for b in _sb]); _c = np.array([b["close"] for b in _sb])
+                    pb_dir, pb_level, pb_note = pullback_signal(_o, _h, _l, _c, _m)
+                    entry_action = DirectionalSignal.BUY if pb_dir > 0 else (DirectionalSignal.SELL if pb_dir < 0 else DirectionalSignal.HOLD)
+                    entry_note = pb_note
+                    self._log_decision(bar_dt, "signal", spot=curr_price, direction=("BUY" if pb_dir > 0 else "SELL" if pb_dir < 0 else "none"), level=pb_level, note=pb_note)
+                    if pb_dir != 0:
+                        logger.info(f"[PULLBACK SIGNAL] {'BUY' if pb_dir > 0 else 'SELL'}: {pb_note}")
+
+        if is_market_active and pos.side == PositionSide.FLAT and not entry_vetoed and entry_action in (DirectionalSignal.BUY, DirectionalSignal.SELL):
+            action_str = "BUY" if entry_action == DirectionalSignal.BUY else "SELL"
 
             # --- 1-MINUTE CANDLE-CLOSE CONFIRMATION (directional mode) ---
-            if chosen_mode == TradeStrategyMode.DIRECTIONAL:
+            if chosen_mode == TradeStrategyMode.DIRECTIONAL and not use_pullback:
                 _tf = int(self.config.directional.candle_tf_min)
                 _min_idx = (bar_dt.hour - 9) * 60 + bar_dt.minute - 15
                 if not is_candle_close(_min_idx, _tf):
@@ -562,11 +636,13 @@ class AlgoVPINRunner:
             else:
                 confirm_ok, confirm_msg = True, ""
             # --- 5-MINUTE HTF ALIGNMENT CHECK ---
-            htf_ok, htf_reason = self.mtf_analyst.validate_htf_entry_alignment(action_str, curr_price)
+            htf_ok, htf_reason = (True, "") if use_pullback else self.mtf_analyst.validate_htf_entry_alignment(action_str, curr_price)
             if not confirm_ok:
                 logger.info(f"[NO CONFIRMATION] {action_str} not taken: {confirm_msg}")
+                self._log_decision(bar_dt, "gate_confirmation", spot=curr_price, direction=action_str, note=confirm_msg)
             elif not htf_ok:
                 logger.warning(f"[HTF VETO] [TRACK 1 DUAL] Entry blocked: {htf_reason}")
+                self._log_decision(bar_dt, "gate_htf", spot=curr_price, direction=action_str, note=htf_reason)
             else:
                 if confirm_msg:
                     logger.info(f"[CONFIRMED] {action_str}: {confirm_msg}")
@@ -580,7 +656,7 @@ class AlgoVPINRunner:
 
                 t1_unanimous = (ensemble_dec.svm_prediction == ensemble_dec.xgb_prediction and ensemble_dec.xgb_prediction != 0)
                 targets = self.risk_manager.compute_trade_targets(
-                    signal=ensemble_dec.final_action,
+                    signal=entry_action,
                     current_price=curr_price,
                     garch_res=garch_res,
                     vpin_res=vpin_res,
@@ -595,6 +671,8 @@ class AlgoVPINRunner:
                 )
 
 
+                if not targets:
+                    self._log_decision(bar_dt, "gate_targets", spot=curr_price, direction=action_str, note="risk manager returned no trade (risk cap, R:R, daily cap, kill switch or premium)", premium=opt_premium or 0.0)
                 if targets:
                     if is_option and target_symbol and opt_premium:
                         opt_bars = self.opt_bars_tracker.setdefault(target_symbol, [])
@@ -624,14 +702,16 @@ class AlgoVPINRunner:
                         )
                         if not sanity_res.is_favorable:
                             logger.warning(f"[PRE-TRADE SANITY VETO] [TRACK 1] {sanity_res.reason}")
+                            self._log_decision(bar_dt, "gate_sanity", spot=curr_price, direction=action_str, note=sanity_res.reason)
                             targets = None
 
                     if targets and is_option and (not target_symbol or "ATM_" in str(target_symbol)):
                         logger.warning(f"[ENTRY BLOCKED] Option symbol resolution failed: {target_symbol}. Skipping entry.")
                     elif targets:
+                        self._log_decision(bar_dt, "entry", spot=curr_price, direction=action_str, level=getattr(targets, "spot_stop_loss", 0.0), note=entry_note, stop=targets.stop_loss, target=targets.take_profit, premium=exec_price, symbol=target_symbol or "")
                         self.risk_manager.current_position.entry_time = datetime.now(self.tz)
                         self.execution.execute_entry(
-                            signal=ensemble_dec.final_action,
+                            signal=entry_action,
                             current_price=exec_price,
                             trade_target=targets,
                             vpin_res=vpin_res,
@@ -753,6 +833,7 @@ class AlgoVPINRunner:
         sym, side = pos.symbol, ("CALL" if pos.symbol and ("CALL" in pos.symbol or "CE" in pos.symbol) else "PUT")
         receipt = self.execution.execute_exit(current_price=price, reason=reason)
         if receipt is not None:
+            self._log_decision(datetime.now(self.tz), "exit", spot=0.0, direction=side, note=reason, premium=receipt.price, symbol=sym or "", pnl=getattr(receipt, "realized_pnl", 0.0))
             try:
                 bars = int(self.auto_tuner.state.post_trade_cooldown_bars) if hasattr(self.auto_tuner.state, "post_trade_cooldown_bars") else 3
             except Exception:

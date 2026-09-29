@@ -245,6 +245,7 @@ class EnsembleConfig:
 class DirectionalConfig:
     """Directional mode: entry confirmed on a closed 1-min candle, stop from structure, target from volatility."""
     candle_tf_min: int = 5              # candle timeframe (minutes) for confirmation and structure stop; 1 = raw 1-min
+    entry_source: str = "pullback"     # pullback = 15-min trend + pullback + 5-min confirmation; engine = momentum/pattern trigger
     confirm_body_frac: float = 0.5      # signal candle body must be >= 50% of its range
     sl_lookback_candles: int = 3        # stop under the lowest low / over the highest high of the last N candles
     sl_buffer_atr: float = 0.1          # buffer beyond that level, as a fraction of the median 1-min range
